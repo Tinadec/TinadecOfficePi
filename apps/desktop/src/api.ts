@@ -1255,7 +1255,7 @@ export const api = {
   }),
 
   // --- Streaming Invoke (SSE) ---
-  invokeStream: (sessionId: string, content: string, onChunk: (chunk: ModelStreamChunkDto) => void, onError?: (error: Error) => void): AbortController => {
+  invokeStream: (sessionId: string, content: string, onChunk: (chunk: ModelStreamChunkDto) => void, onError?: (error: Error) => void, onComplete?: () => void): AbortController => {
     const controller = new AbortController();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -1298,6 +1298,7 @@ export const api = {
             }
           }
         }
+        onComplete?.()
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') return;
         onError?.(err instanceof Error ? err : new Error(String(err)));
@@ -1310,20 +1311,21 @@ export const api = {
   connectEvents(sessionId: string | null, onEvent: (event: EventEnvelope) => void): EventSource {
     const params = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : '';
     const source = new EventSource(`${gatewayUrl}/api/v1/events${params}`);
-    source.onmessage = (message) => onEvent(JSON.parse(message.data));
-    source.addEventListener('project.created', (message) => onEvent(JSON.parse((message as MessageEvent).data)));
-    source.addEventListener('session.created', (message) => onEvent(JSON.parse((message as MessageEvent).data)));
-    source.addEventListener('message.created', (message) => onEvent(JSON.parse((message as MessageEvent).data)));
-    source.addEventListener('approval.requested', (message) => onEvent(JSON.parse((message as MessageEvent).data)));
-    source.addEventListener('approval.approved', (message) => onEvent(JSON.parse((message as MessageEvent).data)));
-    source.addEventListener('approval.rejected', (message) => onEvent(JSON.parse((message as MessageEvent).data)));
-    source.addEventListener('tool.shell.approval_required', (message) => onEvent(JSON.parse((message as MessageEvent).data)));
-    source.addEventListener('run.started', (message) => onEvent(JSON.parse((message as MessageEvent).data)));
-    source.addEventListener('task_graph.created', (message) => onEvent(JSON.parse((message as MessageEvent).data)));
-    source.addEventListener('task.assigned', (message) => onEvent(JSON.parse((message as MessageEvent).data)));
-    source.addEventListener('step.result.created', (message) => onEvent(JSON.parse((message as MessageEvent).data)));
-    source.addEventListener('supervision.checked', (message) => onEvent(JSON.parse((message as MessageEvent).data)));
-    source.addEventListener('context.pack.created', (message) => onEvent(JSON.parse((message as MessageEvent).data)));
+    const handleEvent = (message: MessageEvent) => {
+      try {
+        onEvent(JSON.parse(message.data));
+      } catch {
+        // Ignore malformed event data and keep the stream connected.
+      }
+    };
+    source.onmessage = handleEvent;
+    for (const type of [
+      'project.created', 'session.created', 'message.created',
+      'approval.requested', 'approval.approved', 'approval.rejected',
+      'tool.shell.approval_required', 'run.started', 'task_graph.created',
+      'task.assigned', 'step.result.created', 'supervision.checked',
+      'context.pack.created'
+    ]) source.addEventListener(type, handleEvent);
     return source;
   }
 };

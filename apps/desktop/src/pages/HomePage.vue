@@ -8,7 +8,7 @@ import AppSidebar from '../components/AppSidebar.vue'
 import AppHeader from '../components/AppHeader.vue'
 import ChatPanel from '../components/ChatPanel.vue'
 import ContextPanel from '../components/ContextPanel.vue'
-import { useAgentActivity } from '@/composables/useAgentActivity'
+import { useAgentActivity, type ThinkingStep, type ToolCall } from '@/composables/useAgentActivity'
 import { useBackground } from '@/composables/useBackground'
 import { usePanelStyles } from '@/composables/usePanelStyles'
 import { useNotifications } from '@/composables/useNotifications'
@@ -42,6 +42,9 @@ const modelName = ref('gpt-5.4-mini')
 const modelApiKey = ref('')
 const shellCommand = ref('npm test')
 const busy = ref(false)
+const streamingAssistant = ref<MessageDto | null>(null)
+const streamingThinkingSteps = ref<ThinkingStep[]>([])
+const streamingToolCalls = ref<ToolCall[]>([])
 const eventSource = ref<EventSource | null>(null)
 const rightRailCollapsed = ref(false)
 const rightRailWidth = ref(420)
@@ -51,7 +54,6 @@ const currentPermission = ref<PermissionLevel>('default')
 const currentProject = computed(() => projects.value.find((project) => project.id === selectedProjectId.value) ?? null)
 const currentSession = computed(() => sessions.value.find((session) => session.id === selectedSessionId.value) ?? null)
 const recentEvents = computed(() => events.value.slice(-8).reverse())
-
 // ---- Agent activity (moved from ChatPanel; data shared with both chat and sidebar) ----
 const sessionIdRef = computed(() => currentSession.value?.id ?? null)
 const {
@@ -62,6 +64,18 @@ const {
   progressEvents: agentProgressEvents,
 } = useAgentActivity(sessionIdRef, orchestration)
 
+const displayMessages = computed(() => streamingAssistant.value
+  ? [...messages.value, streamingAssistant.value]
+  : messages.value
+)
+const displayThinkingSteps = computed(() => agentThinkingSteps.value.length > 0
+  ? agentThinkingSteps.value
+  : streamingThinkingSteps.value
+)
+const displayToolCalls = computed(() => [
+  ...agentToolCalls.value,
+  ...streamingToolCalls.value
+])
 const agentLabel = computed(() => agentActivity.value.activeAgentName ?? null)
 
 // ---- Background customization ----
@@ -237,6 +251,44 @@ async function handleWelcomeSend(content: string) {
   await handleSend(content)
 }
 
+function streamMessage(sessionId: string, content: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    api.invokeStream(sessionId, content, (chunk) => {
+      if (chunk.kind === 'delta' && chunk.delta && streamingAssistant.value) {
+        streamingAssistant.value = {
+          ...streamingAssistant.value,
+          content: streamingAssistant.value.content + chunk.delta
+        }
+      }
+      if (chunk.kind === 'tool_call_delta' && chunk.tool_call_delta) {
+        const tool = chunk.tool_call_delta
+        if (!streamingToolCalls.value.some((call) => call.id === tool.call_id)) {
+          streamingToolCalls.value = [...streamingToolCalls.value, {
+            id: tool.call_id,
+            toolId: tool.tool_id,
+            toolName: tool.tool_id,
+            status: 'running',
+            startedAt: new Date().toISOString(),
+            completedAt: null,
+            durationMs: null,
+            argsSummary: JSON.stringify(tool.arguments),
+            resultSummary: null,
+            requiresApproval: false,
+            approvalId: null,
+            evidence: [],
+            seq: streamingToolCalls.value.length,
+            risk: 'unknown'
+          }]
+        }
+      }
+      if (chunk.kind === 'error') {
+        reject(new Error(chunk.safe_error_message ?? 'Pi invocation failed'))
+      }
+      if (chunk.kind === 'done') resolve()
+    }, reject, resolve)
+  })
+}
+
 async function handleSend(content: string) {
   await run('send message', async () => {
     let sessionId = selectedSessionId.value
@@ -254,26 +306,49 @@ async function handleSend(content: string) {
     }
 
     draft.value = ''
-    await api.postMessage(sessionId, content)
-
-    if (pendingSessionId.value === sessionId) {
-      const title = generateTitle(content)
-      try {
-        await api.updateSessionTitle(sessionId, title)
-        const idx = sessions.value.findIndex((s) => s.id === sessionId)
-        if (idx !== -1) {
-          sessions.value[idx] = { ...sessions.value[idx], title }
-        }
-      } catch {
-        const idx = sessions.value.findIndex((s) => s.id === sessionId)
-        if (idx !== -1) {
-          sessions.value[idx] = { ...sessions.value[idx], title }
-        }
-      }
-      pendingSessionId.value = null
+    streamingAssistant.value = {
+      id: `stream-${Date.now()}`,
+      session_id: sessionId,
+      role: 'assistant',
+      content: '',
+      created_at: new Date().toISOString()
     }
+    streamingThinkingSteps.value = [{
+      id: `stream-${Date.now()}-thinking`,
+      type: 'run_started',
+      title: 'Pi 正在处理',
+      description: '正在分析请求并生成回答',
+      timestamp: new Date().toISOString(),
+      durationMs: null
+    }]
+    streamingToolCalls.value = []
 
-    await loadMessagesAndApprovals()
+    try {
+      await streamMessage(sessionId, content)
+
+      if (pendingSessionId.value === sessionId) {
+        const title = generateTitle(content)
+        try {
+          await api.updateSessionTitle(sessionId, title)
+          const idx = sessions.value.findIndex((s) => s.id === sessionId)
+          if (idx !== -1) {
+            sessions.value[idx] = { ...sessions.value[idx], title }
+          }
+        } catch {
+          const idx = sessions.value.findIndex((s) => s.id === sessionId)
+          if (idx !== -1) {
+            sessions.value[idx] = { ...sessions.value[idx], title }
+          }
+        }
+        pendingSessionId.value = null
+      }
+
+      await loadMessagesAndApprovals()
+    } finally {
+      streamingAssistant.value = null
+      streamingThinkingSteps.value = []
+      streamingToolCalls.value = []
+    }
   })
 }
 
@@ -355,7 +430,7 @@ onUnmounted(() => {
       }"
     >
       <ChatPanel
-        :messages="messages"
+        :messages="displayMessages"
         :sessions="sessions"
         :projects="projects"
         :current-session="currentSession"
@@ -367,8 +442,8 @@ onUnmounted(() => {
         :draft="draft"
         :mode="currentMode"
         :permission="currentPermission"
-        :thinking-steps="agentThinkingSteps"
-        :tool-calls="agentToolCalls"
+        :thinking-steps="displayThinkingSteps"
+        :tool-calls="displayToolCalls"
         :agent-label="agentLabel"
         :panel-style="chatPanelStyle"
         :panel-data-attrs="chatPanelDataAttrs"
@@ -412,7 +487,7 @@ onUnmounted(() => {
         :current-project-path="currentProject?.path"
         :agent-activity="agentActivity"
         :agent-states="agentStatesMap"
-        :thinking-steps="agentThinkingSteps"
+        :thinking-steps="displayThinkingSteps"
         :progress-events="agentProgressEvents"
         :panel-style="contextPanelStyle"
         :panel-data-attrs="contextPanelDataAttrs"
