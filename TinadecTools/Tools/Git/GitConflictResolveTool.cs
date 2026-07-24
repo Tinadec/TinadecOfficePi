@@ -9,6 +9,7 @@ public sealed class GitConflictResolveArgs
     [JsonPropertyName("repository_path")] public string? RepositoryPath { get; set; }
     [JsonPropertyName("path")] public string Path { get; set; } = string.Empty;
     [JsonPropertyName("strategy")] public string Strategy { get; set; } = "auto";
+    [JsonPropertyName("confirm_resolve")] public string? ConfirmResolve { get; set; }
 }
 
 public sealed class GitConflictResolveResult
@@ -28,13 +29,14 @@ public sealed class GitConflictResolveResult
 [JsonSerializable(typeof(GitConflictResolveResult))]
 [JsonSerializable(typeof(GitStatusResult))]
 [JsonSerializable(typeof(GitStatusEntry))]
-internal partial class GitConflictResolveToolJsonContext : JsonSerializerContext;
+internal partial class GitConflictResolveToolJsonContext : JsonSerializerContext { }
 
 internal static class GitConflictResolveTool
 {
     [ToolFunction("git_conflict_resolve", RequiresApproval = true)]
     public static async ValueTask<GitConflictResolveResult> ResolveAsync(GitConflictResolveArgs args, CancellationToken ct)
     {
+        ToolConfirmations.Require(args.ConfirmResolve, nameof(args.ConfirmResolve));
         var repo = GitCli.ResolveRepo(args.RepositoryPath ?? string.Empty, out var error);
         if (repo is null) return Failure(error);
         var path = GitCli.ResolveRepositoryRelativePath(repo, args.Path);

@@ -6,9 +6,12 @@ import {
   ChevronRight,
   Circle,
   Cpu,
+  Database,
+  Download,
   Dna,
   Edit3,
   FileText,
+  FolderOpen,
   GitBranch,
   Globe,
   Info,
@@ -20,7 +23,10 @@ import {
   Moon,
   MoreHorizontal,
   Palette,
+  PanelRight,
+  PawPrint,
   Plus,
+  RefreshCw,
   Save,
   Search,
   Server,
@@ -33,7 +39,7 @@ import {
   Workflow,
   X
 } from '@lucide/vue'
-import { computed, nextTick, reactive, ref } from 'vue' 
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useTheme } from '../composables/useTheme'
@@ -50,6 +56,7 @@ import {
   type ModelCatalogTemplateReadinessDto,
   type ModelCenterAcpRuntimeDto,
   type ModelCenterOverviewDto,
+  type ModelCenterSupplierDto,
   type ModelProviderReadinessDto,
   type ModelProviderInstanceDto,
   type ModelReadinessReceiptDto,
@@ -94,7 +101,8 @@ import {
   type ProjectTemplateSummary
 } from '../toolCatalog'
 import BrandLogo from '@/components/BrandLogo.vue'
-import { UiButton, UiInput, UiCard, UiBadge, UiLabel, UiSwitch } from '@/components/ui'
+import PetPreview from '@/components/PetPreview.vue'
+import { UiButton, UiInput, UiCard, UiBadge, UiLabel, UiSkeleton, UiSwitch, UiDropdownMenu } from '@/components/ui'
 import AgentTopologyCanvas from '@/components/AgentTopologyCanvas.vue'
 import AgentEvolutionPanel from '@/components/AgentEvolutionPanel.vue'
 import PromptEngineeringPanel from '@/components/PromptEngineeringPanel.vue'
@@ -102,8 +110,15 @@ import BackgroundPreview from '@/components/ui/background-preview.vue'
 import PanelStyleControl from '@/components/ui/panel-style-control.vue'
 import { useBackground } from '@/composables/useBackground'
 import { usePanelStyles } from '@/composables/usePanelStyles'
+import { useNotifications } from '@/composables/useNotifications'
 
-type SettingsSection = 'model' | 'agents' | 'agentEvolution' | 'promptContext' | 'promptEngineering' | 'tools' | 'appearance' | 'language' | 'apiDocs' | 'about'
+type SettingsSection = 'general' | 'model' | 'agents' | 'agentEvolution' | 'promptContext' | 'promptEngineering' | 'tools' | 'appearance' | 'pets' | 'language' | 'apiDocs' | 'about'
+
+interface DesktopAppConfig {
+  gateway_url: string
+  source: 'default' | 'user' | 'environment'
+  managed: boolean
+}
 
 interface ProviderForm {
   id: string
@@ -124,10 +139,11 @@ interface ProviderForm {
 const { t, locale } = useI18n()
 const router = useRouter()
 const { theme, setTheme, accentColor, setAccentColor, accentColors } = useTheme()
+const { items: notificationItems, notify, banner, confirm, dismiss: dismissNotification } = useNotifications()
 
-// Background management 鈥?backgroundSettings is a singleton shared with
+// Background management — backgroundSettings is a singleton shared with
 // App.vue (which renders the background layer globally).  The setters below
-// are used by the Settings 鈫?Appearance section.
+// are used by the Settings → Appearance section.
 const {
 settings: backgroundSettings,
 setBackgroundType,
@@ -192,7 +208,151 @@ function openExternal(url: string) {
   window.open(url, '_blank')
 }
 
-const activeSection = ref<SettingsSection>('model')
+const activeSection = ref<SettingsSection>('general')
+const appConfig = ref<DesktopAppConfig>({ gateway_url: api.gatewayUrl, source: 'default', managed: false })
+const gatewayUrlDraft = ref(api.gatewayUrl)
+const gatewayConfigBusy = ref(false)
+const gatewayConfigNotice = ref('')
+const gatewayConfigError = ref('')
+const gatewayConnectionState = ref<'idle' | 'testing' | 'ready' | 'failed'>('idle')
+const PET_CATALOG_PAGE_SIZE = 48
+const petCatalog = ref<PetdexCatalogPet[]>([])
+const downloadedPets = ref<DownloadedPet[]>([])
+const petCatalogQuery = ref('')
+const petCatalogKind = ref('all')
+const petCatalogLimit = ref(PET_CATALOG_PAGE_SIZE)
+const petLoadMoreRef = ref<HTMLElement | null>(null)
+const petCatalogLoading = ref(false)
+const petActionSlug = ref('')
+const petError = ref('')
+
+const downloadedPetBySlug = computed(() => new Map(downloadedPets.value.map((pet) => [pet.slug, pet])))
+const petCatalogKinds = computed(() => Array.from(new Set(petCatalog.value.map((pet) => pet.kind))).sort())
+const matchingPetCatalog = computed(() => {
+  const query = petCatalogQuery.value.trim().toLowerCase()
+  return petCatalog.value.filter((pet) => {
+    if (petCatalogKind.value !== 'all' && pet.kind !== petCatalogKind.value) return false
+    return !query || [pet.displayName, pet.slug, pet.kind, pet.submittedBy]
+      .some((value) => value.toLowerCase().includes(query))
+  })
+})
+const visiblePetCatalog = computed(() => matchingPetCatalog.value.slice(0, petCatalogLimit.value))
+const canLoadMorePets = computed(() => visiblePetCatalog.value.length < matchingPetCatalog.value.length)
+
+let petLoadMoreObserver: IntersectionObserver | null = null
+const stopPetChanged = window.tinadec.pets.onChanged((pet) => {
+  downloadedPets.value = downloadedPets.value.map((item) => item.slug === pet.slug ? { ...item, enabled: pet.enabled } : item)
+})
+
+function loadMorePets() {
+  petCatalogLimit.value = Math.min(matchingPetCatalog.value.length, petCatalogLimit.value + PET_CATALOG_PAGE_SIZE)
+}
+
+async function observePetLoadMore() {
+  petLoadMoreObserver?.disconnect()
+  if (activeSection.value !== 'pets' || !canLoadMorePets.value) return
+  await nextTick()
+  if (!petLoadMoreRef.value) return
+  petLoadMoreObserver = new IntersectionObserver((entries) => {
+    if (entries.some((entry) => entry.isIntersecting)) loadMorePets()
+  }, { rootMargin: '320px 0px' })
+  petLoadMoreObserver.observe(petLoadMoreRef.value)
+}
+
+watch([petCatalogQuery, petCatalogKind], () => {
+  petCatalogLimit.value = PET_CATALOG_PAGE_SIZE
+})
+watch([activeSection, () => visiblePetCatalog.value.length, canLoadMorePets], () => {
+  void observePetLoadMore()
+})
+onBeforeUnmount(() => {
+  petLoadMoreObserver?.disconnect()
+  stopPetChanged()
+})
+
+async function loadPets(force = false) {
+  petCatalogLoading.value = true
+  petError.value = ''
+  try {
+    const [catalog, downloaded] = await Promise.all([
+      window.tinadec.pets.fetchCatalog(force),
+      window.tinadec.pets.listDownloaded(),
+    ])
+    petCatalog.value = catalog
+    downloadedPets.value = downloaded
+    petCatalogLimit.value = PET_CATALOG_PAGE_SIZE
+  } catch (error) {
+    petError.value = error instanceof Error ? error.message : t('settings.petsLoadFailed')
+  } finally {
+    petCatalogLoading.value = false
+  }
+}
+
+function selectSettingsSection(section: SettingsSection) {
+  activeSection.value = section
+  if (section === 'pets' && petCatalog.value.length === 0) void loadPets()
+}
+
+async function downloadPet(slug: string) {
+  petActionSlug.value = slug
+  petError.value = ''
+  try {
+    await window.tinadec.pets.download(slug)
+    downloadedPets.value = await window.tinadec.pets.listDownloaded()
+    notify.success(t('settings.petDownloaded'))
+  } catch (error) {
+    notify.error(error, { title: t('settings.petDownloadFailed') })
+  } finally {
+    petActionSlug.value = ''
+  }
+}
+
+async function setPetEnabled(pet: DownloadedPet, enabled: boolean) {
+  petActionSlug.value = pet.slug
+  petError.value = ''
+  try {
+    const updated = await window.tinadec.pets.setEnabled(pet.slug, enabled)
+    downloadedPets.value = downloadedPets.value.map((item) => item.slug === updated.slug ? updated : item)
+    notify.success(`${pet.displayName}: ${enabled ? t('settings.enablePet') : t('settings.disablePet')}`)
+  } catch (error) {
+    notify.error(error, { title: t('settings.petUpdateFailed') })
+  } finally {
+    petActionSlug.value = ''
+  }
+}
+
+async function openPetFolder(pet: DownloadedPet) {
+  petActionSlug.value = pet.slug
+  petError.value = ''
+  try {
+    await window.tinadec.pets.openFolder(pet.slug)
+  } catch (error) {
+    notify.error(error, { title: t('settings.petUpdateFailed') })
+  } finally {
+    petActionSlug.value = ''
+  }
+}
+
+async function removePet(pet: DownloadedPet) {
+  if (!await confirm({
+    title: t('settings.deletePet'),
+    message: t('settings.deletePetConfirmation', { name: pet.displayName }),
+    confirmLabel: t('settings.deletePet'),
+    cancelLabel: t('settings.cancel'),
+    destructive: true
+  })) return
+  petActionSlug.value = pet.slug
+  petError.value = ''
+  try {
+    await window.tinadec.pets.remove(pet.slug)
+    downloadedPets.value = downloadedPets.value.filter((item) => item.slug !== pet.slug)
+    notify.success(`${pet.displayName}: ${t('settings.deletePet')}`)
+  } catch (error) {
+    notify.error(error, { title: t('settings.petUpdateFailed') })
+  } finally {
+    petActionSlug.value = ''
+  }
+}
 
 // ---- About page runtime health check ----
 const aboutCoreStatus = ref<string>('')
@@ -201,16 +361,14 @@ const aboutGatewayStatus = ref<string>('')
 
 async function checkAboutHealth() {
   try {
-    const res = await fetch('http://127.0.0.1:48731/api/v1/health')
-    const data = await res.json()
+    const data = await api.health()
     aboutCoreStatus.value = data.status === 'ok' ? 'ok' : ''
-    aboutCoreVersion.value = data.version || ''
-  } catch { aboutCoreStatus.value = '' }
-  try {
-    const res = await fetch('http://127.0.0.1:48730/api/v1/health')
-    const data = await res.json()
-    aboutGatewayStatus.value = data.status === 'ok' ? 'ok' : ''
-  } catch { aboutGatewayStatus.value = '' }
+    aboutCoreVersion.value = typeof data.version === 'string' ? data.version : ''
+    aboutGatewayStatus.value = data.gateway === 'ok' ? 'ok' : ''
+  } catch {
+    aboutCoreStatus.value = ''
+    aboutGatewayStatus.value = ''
+  }
 }
 checkAboutHealth()
 const modelCenterOverview = ref<ModelCenterOverviewDto | null>(null)
@@ -242,7 +400,6 @@ const agentRuntimeModelQuery = ref('')
 const agentRuntimeProviderQuery = ref('')
 const agentRuntimeCliQuery = ref('')
 const agentRuntimeAcpQuery = ref('')
-const agentRuntimeNotice = ref('')
 const agentEditTools = ref<string[]>([])
 const agentEditCapabilities = ref<string[]>([])
 const agentEditSystemPrompt = ref('')
@@ -253,7 +410,6 @@ const modelProviderFilter = ref<ModelCenterFilter>('all')
 const modelProviderQuery = ref('')
 const modelProviderListRef = ref<HTMLElement | null>(null)
 const modelDiagnosticsRef = ref<HTMLDetailsElement | null>(null)
-const confirmDeleteId = ref('')
 const busy = ref(false)
 const loading = ref(false)
 const modelCenterLoading = ref(false)
@@ -262,9 +418,8 @@ const modelCenterBusy = ref(false)
 const agentRuntimeBusy = ref(false)
 const modelCenterError = ref('')
 const agentCenterError = ref('')
-const modelCenterNotice = ref('')
 const showModal = ref(false)
-const agentViewMode = ref<'topology' | 'list'>('topology')
+const agentViewMode = ref<'topology' | 'list'>('list')
 const promptSelectedFragmentId = ref('')
 const promptFilterScope = ref('all')
 const promptFilterCategory = ref('all')
@@ -309,17 +464,116 @@ const providerForm = reactive<ProviderForm>({
 })
 
 const navItems = computed(() => [
+  { key: 'general' as const, icon: Settings2, label: t('settings.general') },
   { key: 'model' as const, icon: KeyRound, label: t('settings.model') },
   { key: 'agents' as const, icon: Workflow, label: t('settings.agents') },
-  { key: 'agentEvolution' as const, icon: Dna, label: 'Agent Evolution' },
-  { key: 'promptContext' as const, icon: Bot, label: 'Prompt Context' },
-  { key: 'promptEngineering' as const, icon: GitBranch, label: 'Prompt Engineering' },
+  { key: 'agentEvolution' as const, icon: Dna, label: t('settings.agentEvolution') },
+  { key: 'promptContext' as const, icon: Bot, label: t('settings.promptContext') },
+  { key: 'promptEngineering' as const, icon: GitBranch, label: t('settings.promptEngineering') },
   { key: 'tools' as const, icon: Terminal, label: t('settings.toolLayer') },
   { key: 'appearance' as const, icon: Palette, label: t('settings.appearance') },
+  { key: 'pets' as const, icon: PawPrint, label: t('settings.pets') },
   { key: 'language' as const, icon: Globe, label: t('settings.language') },
   { key: 'apiDocs' as const, icon: FileText, label: t('settings.apiDocs') },
   { key: 'about' as const, icon: Info, label: t('settings.about') },
 ])
+
+async function loadAppConfig() {
+  appConfig.value = await window.tinadec.getAppConfig()
+  gatewayUrlDraft.value = appConfig.value.gateway_url
+}
+
+function normalizedGatewayDraft() {
+  const url = new URL(gatewayUrlDraft.value.trim())
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error(t('settings.gatewayUrlInvalid'))
+  return url.toString().replace(/\/$/, '')
+}
+
+async function testGatewayConnection() {
+  gatewayConfigError.value = ''
+  gatewayConfigNotice.value = ''
+  gatewayConnectionState.value = 'testing'
+  try {
+    const gatewayUrl = normalizedGatewayDraft()
+    const response = await fetch(`${gatewayUrl}/api/v1/health`, {
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(5000)
+    })
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`)
+    gatewayConnectionState.value = 'ready'
+    gatewayConfigNotice.value = t('settings.gatewayConnectionReady')
+  } catch (error) {
+    gatewayConnectionState.value = 'failed'
+    gatewayConfigError.value = error instanceof Error ? error.message : t('settings.gatewayConnectionFailed')
+  }
+}
+
+async function saveGatewayConfiguration() {
+  gatewayConfigNotice.value = ''
+  try {
+    normalizedGatewayDraft()
+  } catch (error) {
+    gatewayConfigError.value = error instanceof Error ? error.message : t('settings.gatewayUrlInvalid')
+    return
+  }
+  gatewayConfigBusy.value = true
+  gatewayConfigError.value = ''
+  gatewayConfigNotice.value = ''
+  try {
+    appConfig.value = await window.tinadec.saveGatewayUrl(gatewayUrlDraft.value)
+    gatewayUrlDraft.value = appConfig.value.gateway_url
+    if (appConfig.value.gateway_url !== api.gatewayUrl) {
+      banner.warning({
+        key: 'gateway-restart',
+        message: t('settings.gatewaySavedRestart'),
+        action: { label: t('settings.restartNow'), run: restartDesktop }
+      })
+    } else {
+      clearGatewayRestartBanner()
+      notify.success(t('settings.gatewaySaved'))
+    }
+  } catch (error) {
+    notify.error(error, { title: t('settings.gatewaySaveFailed') })
+  } finally {
+    gatewayConfigBusy.value = false
+  }
+}
+
+async function resetGatewayConfiguration() {
+  gatewayConfigBusy.value = true
+  gatewayConfigError.value = ''
+  gatewayConfigNotice.value = ''
+  try {
+    appConfig.value = await window.tinadec.resetGatewayUrl()
+    gatewayUrlDraft.value = appConfig.value.gateway_url
+    gatewayConnectionState.value = 'idle'
+    if (appConfig.value.gateway_url !== api.gatewayUrl) {
+      banner.warning({
+        key: 'gateway-restart',
+        message: t('settings.gatewayResetRestart'),
+        action: { label: t('settings.restartNow'), run: restartDesktop }
+      })
+    } else {
+      clearGatewayRestartBanner()
+      notify.success(t('settings.gatewayReset'))
+    }
+  } catch (error) {
+    notify.error(error, { title: t('settings.gatewaySaveFailed') })
+  } finally {
+    gatewayConfigBusy.value = false
+  }
+}
+
+function restartDesktop() {
+  void window.tinadec.restartApp()
+}
+
+function clearGatewayRestartBanner() {
+  const existing = notificationItems.value.find((item) => item.key === 'gateway-restart')
+  if (existing) dismissNotification(existing.id)
+}
+
+void loadAppConfig()
 
 const modelCenterSections = computed(() => [
   { key: 'suppliers' as const, label: t('settings.centerSuppliers'), count: modelCenterOverview.value?.suppliers.length ?? 0 },
@@ -389,6 +643,12 @@ const firstNeedsKeyProvider = computed(() =>
 const agentRuntimeBindings = computed(() =>
   Object.fromEntries((agentCenterOverview.value?.agents ?? []).map((agent) => [agent.id, agent.runtime_binding]))
 )
+const topologyAgentLabels = computed(() => Object.fromEntries(
+  agents.value.map((agent) => [agent.id, agentTypeLabel(agent.agent_type)])
+))
+const topologyCandidateLabels = computed(() => Object.fromEntries(
+  agentCandidates.value.map((candidate) => [candidate.id, agentTypeLabel(candidate.agent_type)])
+))
 const configuringRuntimeBinding = computed(() =>
   bindingForAgent(agentCenterOverview.value, configuringAgentId.value)
 )
@@ -441,8 +701,11 @@ const filteredRuntimeAcpOptions = computed(() => runtimeAcpOptions.value.filter(
 const selectedProvider = computed(() =>
   providers.value.find((provider) => provider.id === selectedProviderId.value) ?? null
 )
+const selectedProviderDetail = computed(() =>
+  providers.value.find((provider) => provider.id === selectedProviderDetailId.value) ?? providers.value[0] ?? null
+)
 const selectedAgent = computed(() =>
-  agents.value.find((agent) => agent.id === selectedAgentId.value) ?? agents.value[0] ?? null
+  agents.value.find((agent) => agent.id === selectedAgentId.value) ?? null
 )
 const configuringAgent = computed(() =>
   agents.value.find((agent) => agent.id === configuringAgentId.value) ?? null
@@ -450,25 +713,6 @@ const configuringAgent = computed(() =>
 const planningAgents = computed(() => agents.value.filter((agent) => agent.layer === 'planning'))
 const executionAgents = computed(() => agents.value.filter((agent) => agent.layer === 'execution'))
 const configuredAgentMode = computed(() => agentModes.value.find((mode) => mode.id === configuringAgent.value?.mode) ?? null)
-const gitManagerAgent = computed(() =>
-  agents.value.find((agent) => agent.id === 'executor_git_manager') ??
-  agents.value.find((agent) => agent.agent_type === 'git-manager') ??
-  null
-)
-const gitManagerMode = computed(() => agentModes.value.find((mode) => mode.id === gitManagerAgent.value?.mode) ?? null)
-const gitManagerTools = computed(() => {
-  const toolIds = gitManagerAgent.value?.allowed_tools ?? []
-  return toolIds
-    .map((toolId) => availableTools.value.find((tool) => tool.id === toolId))
-    .filter((tool): tool is ToolDescriptorDto => Boolean(tool))
-})
-const gitManagerCapabilities = computed(() =>
-  (gitManagerAgent.value?.capabilities ?? []).filter((capability) =>
-    capability.startsWith('git.') ||
-    capability === 'handoff.explain' ||
-    capability === 'conflict.resolve'
-  )
-)
 const manifestToolList = computed(() => manifestTools(harnessManifest.value, availableTools.value))
 const manifestProviders = computed(() => sortedToolProviders(harnessManifest.value))
 const manifestAgentLayers = computed(() => sortedAgentLayers(harnessManifest.value))
@@ -501,14 +745,6 @@ const promptFilteredFragments = computed(() => promptFragments.value.filter((fra
   return true
 }))
 
-function brandColor(driver: string) {
-  return findTemplate(driver)?.brand_color ?? supplierTemplates.value.get(driver)?.brand_color ?? '#58a6ff'
-}
-
-function brandBg(driver: string) {
-  return findTemplate(driver)?.brand_bg ?? supplierTemplates.value.get(driver)?.brand_bg ?? 'rgba(88,166,255,0.12)'
-}
-
 function runtimeQueryMatches(query: string, ...values: Array<string | null | undefined>) {
   const normalized = query.trim().toLocaleLowerCase()
   if (!normalized) return true
@@ -519,12 +755,12 @@ function centerDiagnosticLabel(diagnostic: CenterDiagnosticDto) {
   if (diagnostic.code === 'CORE_CAPABILITY_UNAVAILABLE') {
     return t('settings.optionalCapabilityUnavailable', {
       source: diagnostic.source ?? 'Core',
-      status: diagnostic.status ?? '-'
+      status: diagnostic.status ?? '—'
     })
   }
   if (diagnostic.code === 'LEGACY_SHARED_ROUTE') {
     return t('settings.sharedRouteDiagnostic', {
-      purpose: diagnostic.route_purpose ?? '-',
+      purpose: diagnostic.route_purpose ?? '—',
       count: diagnostic.agent_ids?.length ?? 0
     })
   }
@@ -604,6 +840,9 @@ function openEditModal(provider: ModelProviderInstanceDto) {
 
 function toggleProviderDetail(providerId: string) {
   selectedProviderDetailId.value = selectedProviderDetailId.value === providerId ? '' : providerId
+  if (selectedProviderDetailId.value) {
+    selectedProviderId.value = providerId
+  }
 }
 
 function focusModelProviderList(filter: ModelCenterFilter) {
@@ -641,12 +880,23 @@ async function toggleProviderEnabled(provider: ModelProviderInstanceDto) {
     }
     await api.saveModelProvider(provider.id, payload)
     await Promise.all([loadModelCenter(), loadAgentCenter()])
+    notify.success(`${provider.display_name}: ${provider.enabled ? t('settings.disable') : t('settings.enable')}`)
+  } catch (error) {
+    notify.error(error, { title: provider.display_name })
   } finally {
     modelCenterBusy.value = false
   }
 }
 
 async function deleteProvider(providerId: string) {
+  const provider = providers.value.find((item) => item.id === providerId)
+  if (!await confirm({
+    title: t('settings.delete'),
+    message: `${t('settings.confirmDeleteProvider')}\n${provider?.display_name ?? providerId} (${providerId})`,
+    confirmLabel: t('settings.confirmDelete'),
+    cancelLabel: t('settings.cancel'),
+    destructive: true
+  })) return
   modelCenterBusy.value = true
   try {
     await api.deleteModelProvider(providerId)
@@ -654,9 +904,11 @@ async function deleteProvider(providerId: string) {
       selectedProviderDetailId.value = ''
     }
     await Promise.all([loadModelCenter(), loadAgentCenter()])
+    notify.success(`${provider?.display_name ?? providerId}: ${t('settings.delete')}`)
+  } catch (error) {
+    notify.error(error, { title: provider?.display_name ?? providerId })
   } finally {
     modelCenterBusy.value = false
-    confirmDeleteId.value = ''
   }
 }
 
@@ -670,7 +922,6 @@ async function loadModelCenter() {
   try {
     const overview = await api.getModelCenterOverview()
     modelCenterOverview.value = overview
-    modelCenterNotice.value = ''
     const instances = providersFromOverview(overview)
     providers.value = instances
     modelReadiness.value = overview.readiness.model ?? null
@@ -689,12 +940,12 @@ async function loadModelCenter() {
 
 async function refreshProviderModels(providerInstanceId: string) {
   modelCenterBusy.value = true
-  modelCenterNotice.value = ''
   try {
     await api.refreshProviderModels(providerInstanceId)
     await loadModelCenter()
+    notify.success(t('settings.refreshModels'))
   } catch (error) {
-    modelCenterNotice.value = error instanceof Error ? error.message : t('settings.modelDiscoveryUnsupported')
+    notify.error(error, { title: t('settings.modelDiscoveryUnsupported') })
   } finally {
     modelCenterBusy.value = false
   }
@@ -703,12 +954,12 @@ async function refreshProviderModels(providerInstanceId: string) {
 async function probeAcpRuntime(runtime: ModelCenterAcpRuntimeDto) {
   if (!runtime.adapter_id) return
   modelCenterBusy.value = true
-  modelCenterNotice.value = ''
   try {
     await api.probeAcpAdapter(runtime.adapter_id)
     await Promise.all([loadModelCenter(), loadAgentCenter()])
+    notify.success(runtime.display_name)
   } catch (error) {
-    modelCenterNotice.value = error instanceof Error ? error.message : t('settings.acpProbeFailed')
+    notify.error(error, { title: t('settings.acpProbeFailed') })
   } finally {
     modelCenterBusy.value = false
   }
@@ -761,9 +1012,10 @@ async function loadAgentCenter() {
     api.executeCodeTool('project_templates')
       .then((result) => { projectTemplates.value = projectTemplatesFromResult(result) })
       .catch(() => { projectTemplates.value = [] })
-    if (!overview.agents.some((agent) => agent.id === selectedAgentId.value)) {
-      selectedAgentId.value = overview.agents[0]?.id ?? ''
-    }
+    const activeAgent = overview.agents.find((agent) => agent.id === configuringAgentId.value)
+      ?? overview.agents.find((agent) => agent.id === selectedAgentId.value)
+      ?? overview.agents[0]
+    if (activeAgent) openAgentConfig(activeAgent)
   } catch (error) {
     agentCenterError.value = error instanceof Error ? error.message : t('settings.centerLoadFailed')
   } finally {
@@ -858,6 +1110,9 @@ async function savePromptFragment() {
       : await api.createPromptFragment(promptPayload())
     promptSelectedFragmentId.value = saved.id
     await loadPromptContextCenter()
+    notify.success(saved.title)
+  } catch (error) {
+    notify.error(error, { title: promptForm.title })
   } finally {
     busy.value = false
   }
@@ -865,11 +1120,23 @@ async function savePromptFragment() {
 
 async function deletePromptFragment() {
   if (!promptForm.id || promptForm.is_builtin) return
+  const fragmentId = promptForm.id
+  const fragmentTitle = promptForm.title
+  if (!await confirm({
+    title: t('settings.delete'),
+    message: `${t('settings.confirmDelete')} ${promptForm.title}?`,
+    confirmLabel: t('settings.confirmDelete'),
+    cancelLabel: t('settings.cancel'),
+    destructive: true
+  })) return
   busy.value = true
   try {
-    await api.deletePromptFragment(promptForm.id)
+    await api.deletePromptFragment(fragmentId)
     promptSelectedFragmentId.value = ''
     await loadPromptContextCenter()
+    notify.success(`${fragmentTitle}: ${t('settings.delete')}`)
+  } catch (error) {
+    notify.error(error, { title: fragmentTitle })
   } finally {
     busy.value = false
   }
@@ -882,6 +1149,9 @@ async function clonePromptFragment(fragmentId = promptForm.id) {
     const cloned = await api.clonePromptFragment(fragmentId)
     promptSelectedFragmentId.value = cloned.id
     await loadPromptContextCenter()
+    notify.success(cloned.title)
+  } catch (error) {
+    notify.error(error)
   } finally {
     busy.value = false
   }
@@ -897,6 +1167,8 @@ async function generatePromptPreview() {
       run_id: promptPreviewRunId.value || null,
       user_content: promptPreviewUserContent.value || null
     })
+  } catch (error) {
+    notify.error(error, { title: t('settings.preview') })
   } finally {
     busy.value = false
   }
@@ -907,6 +1179,9 @@ async function updateAgentMode(agent: AgentProfileDto, mode: string) {
   try {
     await api.updateAgentMode(agent.id, mode)
     await loadAgentCenter()
+    notify.success(agent.name)
+  } catch (error) {
+    notify.error(error, { title: agent.name })
   } finally {
     busy.value = false
   }
@@ -928,26 +1203,30 @@ async function setAgentEnabled(agent: AgentProfileDto, enabled: boolean) {
       enabled
     })
     await loadAgentCenter()
+    notify.success(agent.name)
+  } catch (error) {
+    notify.error(error, { title: agent.name })
   } finally {
     busy.value = false
   }
 }
 
 async function saveAgentProfile() {
-  if (!configuringAgent.value) return
+  const agent = configuringAgent.value
+  if (!agent) return
   busy.value = true
   try {
-    await api.saveAgent(configuringAgent.value.id, {
-      name: configuringAgent.value.name,
-      layer: configuringAgent.value.layer,
-      agent_type: configuringAgent.value.agent_type,
-      mode: configuringAgent.value.mode,
+    await api.saveAgent(agent.id, {
+      name: agent.name,
+      layer: agent.layer,
+      agent_type: agent.agent_type,
+      mode: agent.mode,
       description: agentEditDescription.value,
-      model_route_purpose: configuringAgent.value.model_route_purpose,
+      model_route_purpose: agent.model_route_purpose,
       allowed_tools: agentEditTools.value,
       capabilities: agentEditCapabilities.value,
       system_prompt: agentEditSystemPrompt.value || null,
-      enabled: configuringAgent.value.enabled
+      enabled: agent.enabled
     })
     await loadAgentCenter()
     // Re-sync edit state from the saved agent
@@ -958,6 +1237,9 @@ async function saveAgentProfile() {
       agentEditSystemPrompt.value = updated.system_prompt ?? ''
       agentEditDescription.value = updated.description
     }
+    notify.success(agent.name)
+  } catch (error) {
+    notify.error(error, { title: agent.name })
   } finally {
     busy.value = false
   }
@@ -1009,14 +1291,21 @@ function openAgentConfig(agent: AgentProfileDto) {
   agentRuntimeProviderQuery.value = ''
   agentRuntimeCliQuery.value = ''
   agentRuntimeAcpQuery.value = ''
-  agentRuntimeNotice.value = ''
-  // Scroll to config panel after next tick
   nextTick(() => {
+    if (!window.matchMedia('(max-width: 760px)').matches) return
     const panel = document.querySelector('.agent-detail-panel')
-    if (panel) {
-      panel.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
+    panel?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   })
+}
+
+function closeAgentConfig() {
+  selectedAgentId.value = ''
+  configuringAgentId.value = ''
+}
+
+function openAgentConfigById(agentId: string) {
+  const agent = agents.value.find((item) => item.id === agentId)
+  if (agent) openAgentConfig(agent)
 }
 
 function runtimeBindingInput(): AgentRuntimeBindingInput | null {
@@ -1045,12 +1334,12 @@ async function saveAgentRuntimeBinding(agent: AgentProfileDto) {
   const binding = runtimeBindingInput()
   if (!binding) return
   agentRuntimeBusy.value = true
-  agentRuntimeNotice.value = ''
   try {
     await api.saveAgentRuntimeBinding(agent.id, binding)
     await loadAgentCenter()
+    notify.success(agent.name)
   } catch (error) {
-    agentRuntimeNotice.value = error instanceof Error ? error.message : t('settings.runtimeBindingUnsupported')
+    notify.error(error, { title: agent.name })
   } finally {
     agentRuntimeBusy.value = false
   }
@@ -1090,6 +1379,9 @@ async function saveProvider() {
     if (isNewProvider) {
       modelProviderFilter.value = 'configured'
     }
+    notify.success(saved.display_name)
+  } catch (error) {
+    notify.error(error, { title: providerForm.display_name })
   } finally {
     modelCenterBusy.value = false
   }
@@ -1104,14 +1396,15 @@ function connectionKindLabel(kind: string) {
 
 function agentTypeLabel(type: string) {
   const map: Record<string, string> = {
-    // Layer 1 路 Planning 涓诲姩鏅鸿兘浣?
+    // Layer 1 · Planning 主动智能体
     meeting: t('settings.agentTypeMeeting'),
     'context-compressor': t('settings.agentTypeContextCompressor'),
+    'prompt-context-engineer': t('settings.agentTypePromptContextEngineer'),
     evolver: t('settings.agentTypeEvolver'),
     'tool-assistant': t('settings.agentTypeToolAssistant'),
     supervisor: t('settings.agentTypeSupervisor'),
     'skill-learner': t('settings.agentTypeSkillLearner'),
-    // Layer 2 路 Execution 琚姩鎵ц绫绘櫤鑳戒綋
+    // Layer 2 · Execution 被动执行类智能体
     'task-planner': t('settings.agentTypeTaskPlanner'),
     'test-multimodal': t('settings.agentTypeTestMultimodal'),
     'code-explorer': t('settings.agentTypeCodeExplorer'),
@@ -1120,6 +1413,8 @@ function agentTypeLabel(type: string) {
     'git-manager': t('settings.agentTypeGitManager'),
     'code-writer': t('settings.agentTypeCodeWriter'),
     designer: t('settings.agentTypeDesigner'),
+    'review-executor': t('settings.agentTypeReviewExecutor'),
+    'tool-packager': t('settings.agentTypeToolPackager'),
     // Legacy types (kept for backward compatibility)
     chair: t('settings.agentTypeMeeting'),
     planner: t('settings.agentTypeTaskPlanner'),
@@ -1142,12 +1437,72 @@ function agentLayerLabel(layer: string) {
 
 function agentModeLabel(mode: string) {
   const map: Record<string, string> = {
+    balanced: t('settings.agentModeBalanced'),
+    'plan-first': t('settings.agentModePlanFirst'),
+    parallel: t('settings.agentModeParallel'),
+    'safe-research': t('settings.agentModeSafeResearch'),
     chat: t('settings.agentModeChat'),
     plan: t('settings.agentModePlan'),
     execute: t('settings.agentModeExecute'),
     review: t('settings.agentModeReview'),
   }
   return map[mode] ?? mode
+}
+
+function agentModeSummary(mode: AgentModeDto) {
+  const map: Record<string, string> = {
+    balanced: t('settings.agentModeBalancedHint'),
+    'plan-first': t('settings.agentModePlanFirstHint'),
+    parallel: t('settings.agentModeParallelHint'),
+    'safe-research': t('settings.agentModeSafeResearchHint')
+  }
+  return map[mode.id] ?? mode.summary
+}
+
+function agentPolicyLabel(policy: string) {
+  const map: Record<string, string> = {
+    balanced: t('settings.policyBalanced'),
+    strict: t('settings.policyStrict'),
+    performance: t('settings.policyPerformance')
+  }
+  return map[policy] ?? policy
+}
+
+function supplierTransportLabel(kind: string) {
+  const map: Record<string, string> = {
+    http_json: t('settings.transportCloudApi'),
+    local_http: t('settings.transportLocalService'),
+    cli: 'CLI',
+    acp: 'ACP'
+  }
+  return map[kind] ?? kind
+}
+
+function supplierCredentialLabel(kind: string) {
+  const map: Record<string, string> = {
+    api_key: t('settings.apiKey'),
+    'api-key': t('settings.apiKey'),
+    cli: t('settings.localCredential'),
+    none: t('settings.noCredential')
+  }
+  return map[kind] ?? kind
+}
+
+function supplierSummary(supplier: ModelCenterSupplierDto) {
+  const template = findTemplate(supplier.driver)
+  if (template) return t(template.summary_key)
+  if (supplier.transport_kind === 'local_http') return t('settings.supplierLocalSummary')
+  if (supplier.transport_kind === 'cli') return t('settings.supplierCliSummary')
+  if (supplier.transport_kind === 'acp') return t('settings.supplierAcpSummary')
+  return t('settings.supplierCloudSummary')
+}
+
+function providerPresentation(driver: string) {
+  return supplierTemplates.value.get(driver) ?? findTemplate(driver)
+}
+
+function candidateStatusLabel(status: string) {
+  return status === 'proposed' ? t('settings.candidateProposed') : status
 }
 
 function statusLabel(status: string) {
@@ -1184,6 +1539,8 @@ function readinessStatusLabel(status: string) {
 loadModelCenter()
 loadAgentCenter()
 loadPromptContextCenter()
+
+import '../settings/settings.css'
 </script>
 
 <template>
@@ -1218,7 +1575,9 @@ loadPromptContextCenter()
           size="sm"
           class="settings-nav-item w-full justify-start"
           :class="{ active: activeSection === item.key }"
-          @click="activeSection = item.key"
+          :title="item.label"
+          :aria-label="item.label"
+            @click="selectSettingsSection(item.key)"
         >
           <component :is="item.icon" :size="16" />
           {{ item.label }}
@@ -1228,32 +1587,129 @@ loadPromptContextCenter()
       <div class="settings-content" :style="settingsContentStyle" v-bind="settingsContentDataAttrs">
         <Transition name="section-fade" mode="out-in">
         <div :key="activeSection" class="settings-section-wrapper">
-        <template v-if="activeSection === 'model'">
-          <div class="model-center-heading">
+        <template v-if="activeSection === 'general'">
+          <div class="general-settings-heading">
             <div>
+              <h2>{{ t('settings.general') }}</h2>
+              <p>{{ t('settings.generalSubtitle') }}</p>
+            </div>
+          </div>
+
+          <section class="general-settings-group" aria-labelledby="gateway-settings-title">
+            <div class="general-settings-group-heading">
+              <div>
+                <h3 id="gateway-settings-title">{{ t('settings.gatewayConnection') }}</h3>
+                <p>{{ t('settings.gatewayConnectionHint') }}</p>
+              </div>
+              <UiBadge :variant="gatewayConnectionState === 'ready' ? 'secondary' : gatewayConnectionState === 'failed' ? 'destructive' : 'outline'">
+                {{ gatewayConnectionState === 'testing'
+                  ? t('settings.gatewayTesting')
+                  : gatewayConnectionState === 'ready'
+                    ? t('settings.gatewayConnected')
+                    : gatewayConnectionState === 'failed'
+                      ? t('settings.gatewayUnreachable')
+                      : t('settings.gatewayNotTested') }}
+              </UiBadge>
+            </div>
+
+            <div class="gateway-config-field">
+              <UiLabel for="gateway-url">{{ t('settings.gatewayUrl') }}</UiLabel>
+              <UiInput
+                id="gateway-url"
+                v-model="gatewayUrlDraft"
+                type="url"
+                :disabled="appConfig.managed || gatewayConfigBusy"
+                placeholder="https://tinadec.example.com"
+                @keydown.enter="testGatewayConnection"
+              />
+              <div class="gateway-config-meta">
+                <span>{{ t('settings.gatewayConfigSource') }}: {{ t(`settings.gatewaySource_${appConfig.source}`) }}</span>
+                <span>{{ t('settings.gatewayHttpsHint') }}</span>
+              </div>
+            </div>
+
+            <p v-if="appConfig.managed" class="gateway-config-managed">
+              <ShieldCheck :size="14" />
+              {{ t('settings.gatewayManaged') }}
+            </p>
+            <p v-if="gatewayConfigNotice" class="gateway-config-feedback success" role="status">{{ gatewayConfigNotice }}</p>
+            <p v-if="gatewayConfigError" class="gateway-config-feedback error" role="alert">{{ gatewayConfigError }}</p>
+
+            <div class="gateway-config-actions">
+              <UiButton variant="outline" :disabled="gatewayConnectionState === 'testing'" @click="testGatewayConnection">
+                <RefreshCw :size="14" :class="{ spinning: gatewayConnectionState === 'testing' }" />
+                {{ t('settings.testConnection') }}
+              </UiButton>
+              <UiButton variant="outline" :disabled="appConfig.managed || gatewayConfigBusy" @click="resetGatewayConfiguration">
+                {{ t('settings.restoreDefault') }}
+              </UiButton>
+              <UiButton :disabled="appConfig.managed || gatewayConfigBusy" @click="saveGatewayConfiguration">
+                <Save :size="14" />
+                {{ t('settings.save') }}
+              </UiButton>
+            </div>
+          </section>
+        </template>
+
+        <template v-if="activeSection === 'model'">
+          <div class="center-page model-center-page">
+          <div class="center-command-bar">
+            <div>
+              <span class="center-kicker">{{ t('settings.model') }}</span>
               <h2>{{ t('settings.modelCenter') }}</h2>
               <p>{{ t('settings.modelCenterSubtitle') }}</p>
             </div>
-            <div class="model-heading-actions">
+            <div class="center-command-actions">
               <UiButton variant="outline" size="sm" @click="focusModelProviderList('available')">
                 <Plus :size="14" />
                 <span>{{ t('settings.addProvider') }}</span>
               </UiButton>
               <UiButton variant="outline" size="sm" :disabled="modelCenterLoading || modelCenterBusy" @click="loadModelCenter">
-                <Server :size="14" />
+                <RefreshCw :size="14" />
                 <span>{{ t('settings.refresh') }}</span>
               </UiButton>
             </div>
+          </div>
+
+          <section class="center-overview-receipt" :aria-label="t('settings.centerOverview')">
+            <div class="center-receipt-item" :class="{ ready: modelCenterOverview?.capabilities.provider_crud }">
+              <Database :size="17" />
+              <div>
+                <span>{{ t('settings.modelProviderManagement') }}</span>
+                <strong>{{ t('settings.modelProviderManagementHint') }}</strong>
+              </div>
+              <UiBadge :variant="modelCenterOverview?.capabilities.provider_crud ? 'default' : 'secondary'">
+                {{ modelCenterOverview?.capabilities.provider_crud ? t('settings.writable') : t('settings.readOnly') }}
+              </UiBadge>
+            </div>
+            <div class="center-receipt-item configured">
+              <Cpu :size="17" />
+              <div>
+                <span>{{ t('settings.modelCatalogScope') }}</span>
+                <strong>{{ t('settings.configuredModelsOnly') }}</strong>
+              </div>
+              <UiBadge variant="outline">{{ modelCatalogModeLabel(modelCenterOverview?.capabilities.model_catalog_mode) }}</UiBadge>
+            </div>
+            <div class="center-receipt-item" :class="{ ready: modelCenterOverview?.capabilities.live_model_discovery, unavailable: !modelCenterOverview?.capabilities.live_model_discovery }">
+              <Search :size="17" />
+              <div>
+                <span>{{ t('settings.liveDiscovery') }}</span>
+                <strong>{{ modelCenterOverview?.capabilities.live_model_discovery ? t('settings.available') : t('settings.pendingCore') }}</strong>
+              </div>
+              <UiBadge :variant="modelCenterOverview?.capabilities.live_model_discovery ? 'default' : 'secondary'">
+                {{ modelCenterOverview?.capabilities.live_model_discovery ? t('settings.available') : t('settings.unavailable') }}
+              </UiBadge>
+            </div>
+          </section>
+
+          <div v-if="modelCenterLoading && !modelCenterOverview" class="center-loading-state" aria-live="polite">
+            <UiSkeleton v-for="index in 3" :key="index" class="center-loading-line" />
           </div>
 
           <div v-if="modelCenterError" class="center-message error">
             <Info :size="16" />
             <span>{{ modelCenterError }}</span>
             <UiButton variant="outline" size="sm" @click="loadModelCenter">{{ t('settings.retry') }}</UiButton>
-          </div>
-          <div v-if="modelCenterNotice" class="center-message warning">
-            <Info :size="16" />
-            <span>{{ modelCenterNotice }}</span>
           </div>
           <div v-if="modelCenterDiagnostics.length > 0" class="center-message warning center-diagnostics-message">
             <Info :size="16" />
@@ -1267,6 +1723,16 @@ loadPromptContextCenter()
             </div>
             <UiButton variant="outline" size="sm" :disabled="modelCenterLoading" @click="loadModelCenter">{{ t('settings.retry') }}</UiButton>
           </div>
+
+          <div class="center-workbench model-workbench">
+          <aside class="center-inspector" :aria-label="t('settings.centerInspector')">
+            <div class="center-pane-heading">
+              <div>
+                <span>{{ t('settings.centerInspector') }}</span>
+                <strong>{{ t('settings.modelHealth') }}</strong>
+              </div>
+              <PanelRight :size="16" />
+            </div>
 
           <section v-if="modelReadiness || modelCatalogReadiness" class="model-health-overview">
             <div class="model-health-head">
@@ -1282,19 +1748,19 @@ loadPromptContextCenter()
             <div class="model-health-metrics">
               <div>
                 <span>{{ t('settings.readyProvidersMetric') }}</span>
-                <strong>{{ modelReadiness ? `${modelReadiness.ready_provider_count}/${modelReadiness.provider_count}` : '-' }}</strong>
+                <strong>{{ modelReadiness ? `${modelReadiness.ready_provider_count}/${modelReadiness.provider_count}` : '—' }}</strong>
               </div>
               <div :class="{ attention: (modelReadiness?.blocked_route_count ?? 0) > 0 }">
                 <span>{{ t('settings.blockedRoutesMetric') }}</span>
-                <strong>{{ modelReadiness?.blocked_route_count ?? '-' }}</strong>
+                <strong>{{ modelReadiness?.blocked_route_count ?? '—' }}</strong>
               </div>
               <div>
                 <span>{{ t('settings.readyTemplatesMetric') }}</span>
-                <strong>{{ modelCatalogReadiness ? `${modelCatalogReadiness.ready_template_count}/${modelCatalogReadiness.template_count}` : '-' }}</strong>
+                <strong>{{ modelCatalogReadiness ? `${modelCatalogReadiness.ready_template_count}/${modelCatalogReadiness.template_count}` : '—' }}</strong>
               </div>
               <div>
                 <span>{{ t('settings.runtimeModulesMetric') }}</span>
-                <strong>{{ modelCatalogReadiness?.runtime_module_count ?? '-' }}</strong>
+                <strong>{{ modelCatalogReadiness?.runtime_module_count ?? '—' }}</strong>
               </div>
             </div>
             <div v-if="modelReadiness && modelReadiness.status !== 'ready'" class="model-health-alert">
@@ -1333,12 +1799,12 @@ loadPromptContextCenter()
                   </div>
                   <UiBadge :variant="readinessVariant(modelReadiness.status)">{{ readinessStatusLabel(modelReadiness.status) }}</UiBadge>
                 </div>
-                <p class="model-diagnostic-meta">{{ t('settings.generatedAt') }} 路 {{ modelReadiness.generated_at }}</p>
+                <p class="model-diagnostic-meta">{{ t('settings.generatedAt') }} · {{ modelReadiness.generated_at }}</p>
                 <div class="model-diagnostic-list">
                   <strong>{{ t('settings.blockedRoutes') }}</strong>
                   <div v-if="blockedModelRoutes.length > 0" class="model-readiness-routes">
                     <span v-for="route in blockedModelRoutes" :key="route.purpose">
-                      {{ route.purpose }} 路 {{ route.provider_display_name ?? route.provider_instance_id }}
+                      {{ route.purpose }} · {{ route.provider_display_name ?? route.provider_instance_id }}
                     </span>
                   </div>
                   <span v-else class="quiet">{{ t('settings.noBlockedRoutes') }}</span>
@@ -1355,14 +1821,14 @@ loadPromptContextCenter()
                   </div>
                   <UiBadge :variant="readinessVariant(modelCatalogReadiness.status)">{{ readinessStatusLabel(modelCatalogReadiness.status) }}</UiBadge>
                 </div>
-                <p class="model-diagnostic-meta">{{ t('settings.generatedAt') }} 路 {{ modelCatalogReadiness.generated_at }}</p>
+                <p class="model-diagnostic-meta">{{ t('settings.generatedAt') }} · {{ modelCatalogReadiness.generated_at }}</p>
                 <div class="model-diagnostic-list">
                   <strong>{{ t('settings.catalogWarnings') }}</strong>
                   <div v-if="warningCatalogTemplates.length > 0" class="catalog-readiness-rows">
                     <div v-for="template in warningCatalogTemplates" :key="template.driver" class="catalog-readiness-row">
                       <div>
                         <strong>{{ template.display_name }}</strong>
-                        <span>{{ template.runtime_module_family }} 路 {{ template.live_discovery_policy }}</span>
+                        <span>{{ template.runtime_module_family }} · {{ template.live_discovery_policy }}</span>
                       </div>
                       <UiBadge :variant="readinessVariant(template.status)">{{ template.runtime_module_status }}</UiBadge>
                     </div>
@@ -1376,6 +1842,73 @@ loadPromptContextCenter()
             </div>
           </details>
 
+            <section v-if="selectedProviderDetail" class="inspector-provider-detail">
+              <div class="provider-detail-head compact">
+                <span
+                  class="provider-brand-icon"
+                  :style="{ color: providerPresentation(selectedProviderDetail.driver)?.brand_color, backgroundColor: providerPresentation(selectedProviderDetail.driver)?.brand_bg }"
+                >
+                  <span v-if="providerPresentation(selectedProviderDetail.driver)?.icon" class="provider-brand-mark" v-html="providerPresentation(selectedProviderDetail.driver)?.icon"></span>
+                  <Database v-else :size="16" />
+                </span>
+                <div class="provider-detail-info">
+                  <strong>{{ selectedProviderDetail.display_name }}</strong>
+                  <span class="provider-detail-driver">{{ selectedProviderDetail.driver }} · {{ connectionKindLabel(selectedProviderDetail.connection_kind) }}</span>
+                </div>
+                <UiBadge :variant="statusVariant(selectedProviderDetail.status)">
+                  <Circle :size="8" />
+                  {{ statusLabel(selectedProviderDetail.status) }}
+                </UiBadge>
+              </div>
+              <div class="provider-detail-grid compact">
+                <div v-if="selectedProviderDetail.base_url" class="provider-detail-cell">
+                  <span class="provider-detail-label">{{ t('settings.baseUrl') }}</span>
+                  <span class="provider-detail-value provider-detail-mono">{{ selectedProviderDetail.base_url }}</span>
+                </div>
+                <div v-if="selectedProviderDetail.model" class="provider-detail-cell">
+                  <span class="provider-detail-label">{{ t('settings.modelLabel') }}</span>
+                  <span class="provider-detail-value provider-detail-mono">{{ selectedProviderDetail.model }}</span>
+                </div>
+                <div class="provider-detail-cell">
+                  <span class="provider-detail-label">{{ t('settings.apiKey') }}</span>
+                  <span class="provider-detail-value">
+                    <span :class="['provider-key-indicator', selectedProviderDetail.has_api_key ? 'has-key' : 'no-key']"></span>
+                    {{ selectedProviderDetail.has_api_key ? t('settings.apiKeyStored') : t('settings.apiKeyNotSet') }}
+                  </span>
+                </div>
+                <div class="provider-detail-cell">
+                  <span class="provider-detail-label">{{ t('settings.connectionKind') }}</span>
+                  <span class="provider-detail-value">{{ connectionKindLabel(selectedProviderDetail.connection_kind) }}</span>
+                </div>
+              </div>
+              <div v-if="selectedProviderDetail.status_message" class="provider-status-note compact">
+                <Terminal :size="14" />
+                <span>{{ selectedProviderDetail.status_message }}</span>
+              </div>
+              <div class="provider-detail-actions compact">
+                <UiButton variant="outline" size="sm" @click="openEditModal(selectedProviderDetail)">
+                  <Edit3 :size="14" />
+                  <span>{{ t('settings.editConfig') }}</span>
+                </UiButton>
+                <UiButton variant="outline" size="sm" :disabled="modelCenterBusy" @click="toggleProviderEnabled(selectedProviderDetail)">
+                  <component :is="selectedProviderDetail.enabled ? X : Check" :size="14" />
+                  <span>{{ selectedProviderDetail.enabled ? t('settings.disable') : t('settings.enable') }}</span>
+                </UiButton>
+                <UiButton variant="ghost" size="sm" class="provider-delete-btn" :disabled="modelCenterBusy" @click="deleteProvider(selectedProviderDetail.id)">
+                  <Trash2 :size="14" />
+                  <span>{{ t('settings.delete') }}</span>
+                </UiButton>
+              </div>
+            </section>
+          </aside>
+
+          <aside class="center-resource-rail model-resource-navigation" :aria-label="t('settings.centerResources')">
+            <div class="center-pane-heading">
+              <div>
+                <span>{{ t('settings.centerResources') }}</span>
+                <strong>{{ t('settings.modelCenterResources') }}</strong>
+              </div>
+            </div>
           <div class="model-center-tabs" role="tablist" :aria-label="t('settings.modelCenterResources')">
             <button
               v-for="section in modelCenterSections"
@@ -1389,7 +1922,9 @@ loadPromptContextCenter()
               <UiBadge variant="secondary">{{ section.count }}</UiBadge>
             </button>
           </div>
+          </aside>
 
+          <main class="center-resource-stage">
           <section v-if="modelCenterSection === 'suppliers'" ref="modelProviderListRef" class="center-resource-section">
             <div class="center-resource-heading">
               <div>
@@ -1398,26 +1933,32 @@ loadPromptContextCenter()
               </div>
               <UiBadge variant="outline">{{ t('settings.coreCatalog') }}</UiBadge>
             </div>
-            <div class="center-resource-grid supplier-grid">
+            <div class="center-resource-grid supplier-grid supplier-list">
               <article v-for="supplier in modelCenterOverview?.suppliers ?? []" :key="supplier.supplier_id" class="center-resource-card">
                 <div class="center-resource-card-head">
-                  <span class="provider-brand-icon" :style="{ color: brandColor(supplier.driver), background: brandBg(supplier.driver) }" v-html="supplierTemplates.get(supplier.driver)?.icon ?? ''"></span>
+                    <span
+                      class="provider-brand-icon"
+                      :style="{ color: providerPresentation(supplier.driver)?.brand_color, backgroundColor: providerPresentation(supplier.driver)?.brand_bg }"
+                    >
+                      <span v-if="providerPresentation(supplier.driver)?.icon" class="provider-brand-mark" v-html="providerPresentation(supplier.driver)?.icon"></span>
+                      <Database v-else :size="16" />
+                    </span>
                   <div>
                     <strong>{{ supplier.display_name }}</strong>
-                    <span>{{ supplier.provider_family }} 路 {{ supplier.driver }}</span>
+                    <span>{{ supplier.provider_family }} · {{ supplier.driver }}</span>
                   </div>
-                  <UiBadge v-if="catalogReadinessByDriver.get(supplier.driver)" :variant="readinessVariant(catalogReadinessByDriver.get(supplier.driver)!.status)">
-                    {{ readinessStatusLabel(catalogReadinessByDriver.get(supplier.driver)!.status) }}
+                  <UiBadge v-if="catalogReadinessByDriver.get(supplier.driver)?.status !== 'ready'" :variant="readinessVariant(catalogReadinessByDriver.get(supplier.driver)?.status ?? 'unknown')">
+                    {{ readinessStatusLabel(catalogReadinessByDriver.get(supplier.driver)?.status ?? 'unknown') }}
                   </UiBadge>
                 </div>
-                <p>{{ supplier.summary }}</p>
+                <p>{{ supplierSummary(supplier) }}</p>
                 <div class="center-resource-meta">
-                  <span>{{ supplier.transport_kind }}</span>
-                  <span>{{ supplier.credential_kind }}</span>
+                    <span>{{ supplierTransportLabel(supplier.transport_kind) }}</span>
+                    <span>{{ supplierCredentialLabel(supplier.credential_kind) }}</span>
                   <span v-if="supplier.default_model">{{ supplier.default_model }}</span>
                 </div>
                 <div class="center-resource-actions">
-                  <UiButton variant="outline" size="sm" @click="openAddModal(providerTemplateFromSupplier(supplier))">
+                  <UiButton variant="ghost" size="sm" @click="openAddModal(providerTemplateFromSupplier(supplier))">
                     <Plus :size="14" />
                     {{ t('settings.addProvider') }}
                   </UiButton>
@@ -1483,7 +2024,7 @@ loadPromptContextCenter()
                   <Terminal :size="17" />
                   <div>
                     <strong>{{ runtime.display_name }}</strong>
-                    <span>{{ runtime.driver }} 路 {{ runtime.runtime_id }}</span>
+                    <span>{{ runtime.driver }} · {{ runtime.runtime_id }}</span>
                   </div>
                 </div>
                 <div class="center-resource-paths">
@@ -1525,7 +2066,7 @@ loadPromptContextCenter()
                   <Workflow :size="17" />
                   <div>
                     <strong>{{ runtime.display_name }}</strong>
-                    <span>{{ acpRuntimeSourceLabel(runtime.source) }} 路 {{ runtime.runtime_id }}</span>
+                    <span>{{ acpRuntimeSourceLabel(runtime.source) }} · {{ runtime.runtime_id }}</span>
                   </div>
                 </div>
                 <div class="center-resource-meta">
@@ -1586,7 +2127,13 @@ loadPromptContextCenter()
                     :aria-expanded="row.kind === 'instance' ? selectedProviderDetailId === row.provider.id : undefined"
                     @click="row.kind === 'instance' ? toggleProviderDetail(row.provider.id) : openAddModal(row.template)"
                   >
-                    <span class="provider-brand-icon" :style="{ color: brandColor(row.driver), background: brandBg(row.driver) }" v-html="row.template?.icon ?? ''"></span>
+                    <span
+                      class="provider-brand-icon"
+                      :style="{ color: row.template?.brand_color, backgroundColor: row.template?.brand_bg }"
+                    >
+                      <span v-if="row.template?.icon" class="provider-brand-mark" v-html="row.template?.icon"></span>
+                      <Database v-else :size="16" />
+                    </span>
                     <span>
                       <strong :title="row.display_name">{{ row.display_name }}</strong>
                       <small :title="row.driver">{{ row.driver }}</small>
@@ -1631,136 +2178,10 @@ loadPromptContextCenter()
                     </UiButton>
                   </div>
                   <span class="model-provider-mobile-meta">
-                    {{ connectionKindLabel(row.connection_kind) }} 路 {{ row.model || row.driver }}
+                    {{ connectionKindLabel(row.connection_kind) }} · {{ row.model || row.driver }}
                   </span>
                 </div>
 
-                <Transition name="detail-slide">
-                <div v-if="row.kind === 'instance' && selectedProviderDetailId === row.provider.id" class="provider-detail-panel">
-                  <div class="provider-detail-head">
-                    <span class="provider-detail-logo" :style="{ background: brandBg(row.provider.driver), borderColor: brandColor(row.provider.driver) + '30' }" v-html="row.template?.icon ?? ''"></span>
-                    <div class="provider-detail-info">
-                      <strong>{{ row.provider.display_name }}</strong>
-                      <span class="provider-detail-driver">{{ row.provider.driver }} 路 {{ connectionKindLabel(row.provider.connection_kind) }}</span>
-                    </div>
-                    <UiBadge :variant="statusVariant(row.provider.status)">
-                      <Circle :size="8" />
-                      {{ statusLabel(row.provider.status) }}
-                    </UiBadge>
-                  </div>
-
-                  <div class="provider-detail-section">
-                    <div class="provider-detail-section-title">{{ t('settings.connectionConfig') }}</div>
-                    <div class="provider-detail-grid">
-                      <div v-if="row.provider.base_url" class="provider-detail-cell">
-                        <span class="provider-detail-label">{{ t('settings.baseUrl') }}</span>
-                        <span class="provider-detail-value provider-detail-mono">{{ row.provider.base_url }}</span>
-                      </div>
-                      <div v-if="row.provider.model" class="provider-detail-cell">
-                        <span class="provider-detail-label">{{ t('settings.modelLabel') }}</span>
-                        <span class="provider-detail-value provider-detail-mono">{{ row.provider.model }}</span>
-                      </div>
-                      <div class="provider-detail-cell">
-                        <span class="provider-detail-label">{{ t('settings.apiKey') }}</span>
-                        <span class="provider-detail-value">
-                          <span :class="['provider-key-indicator', row.provider.has_api_key ? 'has-key' : 'no-key']"></span>
-                          {{ row.provider.has_api_key ? t('settings.apiKeyStored') : t('settings.apiKeyNotSet') }}
-                        </span>
-                      </div>
-                      <div class="provider-detail-cell">
-                        <span class="provider-detail-label">{{ t('settings.connectionKind') }}</span>
-                        <span class="provider-detail-value">{{ connectionKindLabel(row.provider.connection_kind) }}</span>
-                      </div>
-                      <div v-if="row.provider.binary_path" class="provider-detail-cell">
-                        <span class="provider-detail-label">{{ t('settings.binaryPath') }}</span>
-                        <span class="provider-detail-value provider-detail-mono">{{ row.provider.binary_path }}</span>
-                      </div>
-                      <div v-if="row.provider.server_url" class="provider-detail-cell">
-                        <span class="provider-detail-label">{{ t('settings.serverUrl') }}</span>
-                        <span class="provider-detail-value provider-detail-mono">{{ row.provider.server_url }}</span>
-                      </div>
-                      <div v-if="row.provider.home_path" class="provider-detail-cell">
-                        <span class="provider-detail-label">{{ t('settings.homePath') }}</span>
-                        <span class="provider-detail-value provider-detail-mono">{{ row.provider.home_path }}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div v-if="row.provider.capabilities.length > 0" class="provider-detail-section">
-                    <div class="provider-detail-section-title">{{ t('settings.capabilities') }}</div>
-                    <div class="model-capability-row">
-                      <span v-for="cap in row.provider.capabilities" :key="cap" class="provider-cap-tag">{{ cap }}</span>
-                    </div>
-                  </div>
-
-                  <div v-if="row.provider.status_message" class="provider-status-note">
-                    <Terminal :size="14" />
-                    <span>{{ row.provider.status_message }}</span>
-                  </div>
-
-                  <details
-                    v-if="catalogReadinessByDriver.get(row.provider.driver) || providerReadinessById.get(row.provider.id)"
-                    class="provider-diagnostics"
-                  >
-                    <summary>
-                      <span>{{ t('settings.providerDiagnostics') }}</span>
-                      <ChevronRight :size="13" />
-                    </summary>
-                    <div class="provider-diagnostics-content">
-                      <div v-if="catalogReadinessByDriver.get(row.provider.driver)" class="provider-readiness-detail">
-                        <div class="provider-readiness-detail-head">
-                          <span>{{ t('settings.catalogReceipt') }}</span>
-                          <UiBadge :variant="readinessVariant(catalogReadinessByDriver.get(row.provider.driver)!.status)">
-                            {{ readinessStatusLabel(catalogReadinessByDriver.get(row.provider.driver)!.status) }}
-                          </UiBadge>
-                        </div>
-                        <p>{{ catalogReadinessByDriver.get(row.provider.driver)!.summary }}</p>
-                        <div class="provider-readiness-evidence">
-                          <span>{{ catalogReadinessByDriver.get(row.provider.driver)!.runtime_module_family }}</span>
-                          <span>{{ catalogReadinessByDriver.get(row.provider.driver)!.runtime_module_status }}</span>
-                          <span>{{ catalogReadinessByDriver.get(row.provider.driver)!.live_discovery_policy }}</span>
-                        </div>
-                      </div>
-                      <div v-if="providerReadinessById.get(row.provider.id)" class="provider-readiness-detail">
-                        <div class="provider-readiness-detail-head">
-                          <span>{{ t('settings.providerReceipt') }}</span>
-                          <UiBadge :variant="readinessVariant(providerReadinessById.get(row.provider.id)!.status)">
-                            {{ readinessStatusLabel(providerReadinessById.get(row.provider.id)!.status) }}
-                          </UiBadge>
-                        </div>
-                        <p>{{ providerReadinessById.get(row.provider.id)!.summary }}</p>
-                        <div class="provider-readiness-evidence">
-                          <span v-for="item in providerReadinessById.get(row.provider.id)!.evidence.slice(0, 5)" :key="item">{{ item }}</span>
-                        </div>
-                        <div v-if="providerReadinessById.get(row.provider.id)!.route_purposes.length > 0" class="provider-readiness-evidence route-list">
-                          <span v-for="purpose in providerReadinessById.get(row.provider.id)!.route_purposes" :key="purpose">{{ purpose }}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </details>
-
-                  <div class="provider-detail-actions">
-                    <UiButton variant="outline" size="sm" @click="openEditModal(row.provider)">
-                      <Edit3 :size="14" />
-                      <span>{{ t('settings.editConfig') }}</span>
-                    </UiButton>
-                    <UiButton variant="outline" size="sm" :disabled="modelCenterBusy" @click="toggleProviderEnabled(row.provider)">
-                      <component :is="row.provider.enabled ? X : Check" :size="14" />
-                      <span>{{ row.provider.enabled ? t('settings.disable') : t('settings.enable') }}</span>
-                    </UiButton>
-                    <span class="provider-action-spacer"></span>
-                    <UiButton v-if="confirmDeleteId !== row.provider.id" variant="ghost" size="sm" class="provider-delete-btn" @click="confirmDeleteId = row.provider.id">
-                      <Trash2 :size="14" />
-                      <span>{{ t('settings.delete') }}</span>
-                    </UiButton>
-                    <template v-else>
-                      <span class="delete-confirm-text">{{ t('settings.confirmDeleteProvider') }}</span>
-                      <UiButton variant="destructive" size="sm" :disabled="modelCenterBusy" @click="deleteProvider(row.provider.id)">{{ t('settings.confirmDelete') }}</UiButton>
-                      <UiButton variant="ghost" size="sm" @click="confirmDeleteId = ''">{{ t('settings.cancel') }}</UiButton>
-                    </template>
-                  </div>
-                </div>
-                </Transition>
               </template>
               <div v-if="filteredModelCenterRows.length === 0" class="model-provider-empty">
                 <Search :size="18" />
@@ -1768,19 +2189,26 @@ loadPromptContextCenter()
               </div>
             </div>
           </section>
+          </main>
+          </div>
+          </div>
         </template>
 
         <template v-if="activeSection === 'agents'">
-          <div class="model-center-heading">
+          <div class="center-page agent-center-page">
+          <div class="center-command-bar">
             <div>
+              <span class="center-kicker">{{ t('settings.agents') }}</span>
               <h2>{{ t('settings.agentCenter') }}</h2>
               <p>{{ t('settings.agentCenterSubtitle') }}</p>
             </div>
-            <div class="agent-heading-actions">
+            <div class="center-command-actions">
               <div class="agent-view-toggle">
                 <button
                   :class="['agent-view-btn', { active: agentViewMode === 'topology' }]"
                   :title="t('settings.topologyView')"
+                  :aria-label="t('settings.topologyView')"
+                  :aria-pressed="agentViewMode === 'topology'"
                   @click="agentViewMode = 'topology'"
                 >
                   <LayoutGrid :size="15" />
@@ -1788,16 +2216,51 @@ loadPromptContextCenter()
                 <button
                   :class="['agent-view-btn', { active: agentViewMode === 'list' }]"
                   :title="t('settings.listView')"
+                  :aria-label="t('settings.listView')"
+                  :aria-pressed="agentViewMode === 'list'"
                   @click="agentViewMode = 'list'"
                 >
                   <List :size="15" />
                 </button>
               </div>
               <UiButton variant="outline" size="sm" :disabled="agentCenterLoading || agentRuntimeBusy" @click="loadAgentCenter">
-                <Server :size="14" />
+                <RefreshCw :size="14" />
                 <span>{{ t('settings.refresh') }}</span>
               </UiButton>
             </div>
+          </div>
+
+          <section class="center-overview-receipt agent-overview-receipt" :aria-label="t('settings.centerOverview')">
+            <div class="center-receipt-item ready">
+              <Settings2 :size="17" />
+              <div>
+                <span>{{ t('settings.agentProfilesWritable') }}</span>
+                <strong>{{ t('settings.agentProfilesWritableHint') }}</strong>
+              </div>
+              <UiBadge variant="default">{{ t('settings.writable') }}</UiBadge>
+            </div>
+            <div class="center-receipt-item preview" :class="{ ready: agentCenterOverview?.capabilities.agent_runtime_binding_write }">
+              <Workflow :size="17" />
+              <div>
+                <span>{{ t('settings.runtimePreviewOnly') }}</span>
+                <strong>{{ t('settings.runtimePreviewOnlyHint') }}</strong>
+              </div>
+              <UiBadge :variant="agentCenterOverview?.capabilities.agent_runtime_binding_write ? 'default' : 'secondary'">
+                {{ agentCenterOverview?.capabilities.agent_runtime_binding_write ? t('settings.writable') : t('settings.previewOnly') }}
+              </UiBadge>
+            </div>
+            <div class="center-receipt-item configured">
+              <Bot :size="17" />
+              <div>
+                <span>{{ t('settings.activeAgents') }}</span>
+                <strong>{{ agents.filter(agent => agent.enabled).length }} / {{ agents.length }}</strong>
+              </div>
+              <UiBadge variant="outline">{{ planningAgents.length }} + {{ executionAgents.length }}</UiBadge>
+            </div>
+          </section>
+
+          <div v-if="agentCenterLoading && !agentCenterOverview" class="center-loading-state" aria-live="polite">
+            <UiSkeleton v-for="index in 3" :key="index" class="center-loading-line" />
           </div>
 
           <div v-if="agentCenterError" class="center-message error">
@@ -1818,84 +2281,24 @@ loadPromptContextCenter()
             <UiButton variant="outline" size="sm" :disabled="agentCenterLoading" @click="loadAgentCenter">{{ t('settings.retry') }}</UiButton>
           </div>
 
-          <section v-if="gitManagerAgent" class="git-manager-panel">
-            <div class="git-manager-summary">
-              <div class="agent-card-icon execution git-manager-icon">
-                <Terminal :size="18" />
-              </div>
-              <div class="git-manager-copy">
-                <div class="git-manager-title-row">
-                  <h3>{{ gitManagerAgent.name }}</h3>
-                  <UiBadge :variant="gitManagerAgent.enabled ? 'default' : 'secondary'">
-                    {{ gitManagerAgent.enabled ? t('settings.defaultEnabled') : t('settings.statusDisabled') }}
-                  </UiBadge>
-                </div>
-                <p>{{ t('settings.gitManagerSubtitle') }}</p>
-              </div>
-              <UiButton variant="outline" size="sm" @click="openAgentConfig(gitManagerAgent)">
-                <Settings2 :size="14" />
-                <span>{{ t('settings.gitManagerConfigure') }}</span>
-              </UiButton>
+          <div v-if="!agentCenterLoading && agents.length === 0" class="center-empty-state center-empty-state-prominent">
+            <Bot :size="22" />
+            <div>
+              <strong>{{ t('settings.noAgents') }}</strong>
+              <span>{{ t('settings.noAgentsHint') }}</span>
             </div>
-
-            <div class="git-manager-grid">
-              <div class="git-manager-metric">
-                <ShieldCheck :size="16" />
-                <div>
-                  <span>{{ t('settings.gitManagerApprovalTitle') }}</span>
-                  <strong>{{ t('settings.approvalGateOn') }}</strong>
-                  <p>{{ t('settings.gitManagerApprovalBody') }}</p>
-                </div>
-              </div>
-              <div class="git-manager-metric">
-                <Workflow :size="16" />
-                <div>
-                  <span>{{ t('settings.gitManagerRouteTitle') }}</span>
-                  <strong>{{ runtimeSourceSummary(agentRuntimeBindings[gitManagerAgent.id]) || t('settings.runtimeUnresolved') }}</strong>
-                  <p>{{ gitManagerMode?.display_name ?? agentModeLabel(gitManagerAgent.mode) }} 路 {{ gitManagerAgent.model_route_purpose }}</p>
-                </div>
-              </div>
-              <div class="git-manager-metric">
-                <FileText :size="16" />
-                <div>
-                  <span>{{ t('settings.gitManagerHandoffTitle') }}</span>
-                  <strong>{{ t('settings.gitManagerHandoffName') }}</strong>
-                  <p>{{ t('settings.gitManagerHandoffBody') }}</p>
-                </div>
-              </div>
-            </div>
-
-            <div class="git-manager-tool-row">
-              <div>
-                <span>{{ t('settings.agentTools') }}</span>
-                <div class="model-capability-row compact">
-                  <span v-for="tool in gitManagerTools" :key="tool.id">{{ tool.display_name }}</span>
-                </div>
-              </div>
-              <div>
-                <span>{{ t('settings.gitManagerCapabilitiesTitle') }}</span>
-                <div class="model-capability-row compact">
-                  <span v-for="capability in gitManagerCapabilities" :key="capability">{{ capability }}</span>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <div v-if="agentViewMode === 'topology'" class="agent-topology-section">
-            <AgentTopologyCanvas
-              :agents="agents"
-              :candidates="agentCandidates"
-              :providers="providers"
-              :routes="routes"
-              :runtime-bindings="agentRuntimeBindings"
-              :selected-agent-id="selectedAgentId"
-              @select-agent="selectedAgentId = $event"
-              @configure-agent="openAgentConfig(agents.find(a => a.id === $event)!)"
-            />
           </div>
 
-          <template v-if="agentViewMode === 'list'">
-            <section class="agent-column">
+          <div class="center-workbench agent-workbench" :class="`view-${agentViewMode}`">
+          <aside class="center-resource-rail" :aria-label="t('settings.centerResources')">
+            <div class="center-pane-heading">
+              <div>
+                <span>{{ t('settings.centerResources') }}</span>
+                <strong>{{ t('settings.agentProfiles') }}</strong>
+              </div>
+            </div>
+
+            <section class="agent-column compact">
               <div class="model-section-header">
                 <h3>{{ t('settings.planningLayer') }}</h3>
                 <UiBadge variant="secondary">{{ planningAgents.length }}</UiBadge>
@@ -1906,14 +2309,12 @@ loadPromptContextCenter()
                 class="agent-card"
                 :class="{ active: selectedAgentId === agent.id, disabled: !agent.enabled }"
               >
-                <button class="agent-card-select" @click="selectedAgentId = agent.id">
-                  <div class="agent-card-icon">
-                    <Workflow :size="17" />
-                  </div>
+                <button class="agent-card-select" @click="openAgentConfig(agent)">
+                  <div class="agent-card-icon"><Workflow :size="17" /></div>
                   <div class="agent-card-main">
-                    <strong>{{ agent.name }}</strong>
-                    <span>{{ agentTypeLabel(agent.agent_type) }} 路 {{ agentModeLabel(agent.mode) }}</span>
-                    <small>{{ runtimeSourceSummary(agentRuntimeBindings[agent.id]) || t('settings.runtimeUnresolved') }}</small>
+                    <strong>{{ agentTypeLabel(agent.agent_type) }}</strong>
+                    <span>{{ agentModeLabel(agent.mode) }} · {{ agent.id }}</span>
+                    <small :title="runtimeSourceSummary(agentRuntimeBindings[agent.id])">{{ runtimeSourceSummary(agentRuntimeBindings[agent.id]) || t('settings.runtimeUnresolved') }}</small>
                   </div>
                   <UiBadge :variant="agent.enabled ? 'default' : 'secondary'">
                     {{ agent.enabled ? t('settings.defaultEnabled') : t('settings.statusDisabled') }}
@@ -1925,7 +2326,7 @@ loadPromptContextCenter()
               </article>
             </section>
 
-            <section class="agent-column">
+            <section class="agent-column compact">
               <div class="model-section-header">
                 <h3>{{ t('settings.executionLayer') }}</h3>
                 <UiBadge variant="secondary">{{ executionAgents.length }}</UiBadge>
@@ -1936,14 +2337,12 @@ loadPromptContextCenter()
                 class="agent-card"
                 :class="{ active: selectedAgentId === agent.id, disabled: !agent.enabled }"
               >
-                <button class="agent-card-select" @click="selectedAgentId = agent.id">
-                  <div class="agent-card-icon execution">
-                    <Cpu :size="17" />
-                  </div>
+                <button class="agent-card-select" @click="openAgentConfig(agent)">
+                  <div class="agent-card-icon execution"><Cpu :size="17" /></div>
                   <div class="agent-card-main">
-                    <strong>{{ agent.name }}</strong>
-                    <span>{{ agentTypeLabel(agent.agent_type) }} 路 {{ agentModeLabel(agent.mode) }}</span>
-                    <small>{{ runtimeSourceSummary(agentRuntimeBindings[agent.id]) || t('settings.runtimeUnresolved') }}</small>
+                    <strong>{{ agentTypeLabel(agent.agent_type) }}</strong>
+                    <span>{{ agentModeLabel(agent.mode) }} · {{ agent.id }}</span>
+                    <small :title="runtimeSourceSummary(agentRuntimeBindings[agent.id])">{{ runtimeSourceSummary(agentRuntimeBindings[agent.id]) || t('settings.runtimeUnresolved') }}</small>
                   </div>
                   <UiBadge :variant="agent.enabled ? 'default' : 'secondary'">
                     {{ agent.enabled ? t('settings.defaultEnabled') : t('settings.statusDisabled') }}
@@ -1954,24 +2353,58 @@ loadPromptContextCenter()
                 </button>
               </article>
             </section>
-          </template>
+          </aside>
 
-          <UiCard v-if="configuringAgent" class="agent-detail-panel">
-            <template #content>
+          <main class="center-resource-stage">
+
+          <div v-if="agentViewMode === 'topology'" class="agent-topology-section">
+            <AgentTopologyCanvas
+              :agents="agents"
+              :candidates="agentCandidates"
+              :providers="providers"
+              :routes="routes"
+              :runtime-bindings="agentRuntimeBindings"
+              :selected-agent-id="selectedAgentId"
+              :agent-labels="topologyAgentLabels"
+              :candidate-labels="topologyCandidateLabels"
+              @select-agent="openAgentConfigById"
+              @configure-agent="openAgentConfigById"
+            />
+          </div>
+
+          <div v-if="agentViewMode === 'list'" class="agent-list-summary">
+            <PanelRight :size="16" />
+            <span>{{ selectedAgent ? agentTypeLabel(selectedAgent.agent_type) : t('settings.pleaseOpenAgentConfig') }}</span>
+            <UiButton v-if="selectedAgent" variant="outline" size="sm" @click="openAgentConfig(selectedAgent)">
+              <Settings2 :size="14" />
+              {{ t('settings.openAgentConfig') }}
+            </UiButton>
+          </div>
+          </main>
+
+          <aside class="center-inspector agent-inspector" :aria-label="t('settings.centerInspector')">
+            <div class="center-pane-heading">
+              <div>
+                <span>{{ t('settings.centerInspector') }}</span>
+                <strong>{{ configuringAgent ? agentTypeLabel(configuringAgent.agent_type) : t('settings.agentConfiguration') }}</strong>
+              </div>
+              <PanelRight :size="16" />
+            </div>
+            <div v-if="configuringAgent" class="agent-detail-panel">
               <div class="agent-detail-head">
                 <div class="agent-card-icon" :class="{ execution: configuringAgent.layer === 'execution' }">
                   <component :is="configuringAgent.layer === 'planning' ? Workflow : Cpu" :size="20" />
                 </div>
                 <div>
-                  <h3>{{ t('settings.agentConfiguration') }} 路 {{ configuringAgent.name }}</h3>
-                  <p>{{ agentTypeLabel(configuringAgent.agent_type) }} 路 {{ agentLayerLabel(configuringAgent.layer) }}</p>
+                  <h3>{{ agentTypeLabel(configuringAgent.agent_type) }}</h3>
+                  <p>{{ agentTypeLabel(configuringAgent.agent_type) }} · {{ agentLayerLabel(configuringAgent.layer) }}</p>
                 </div>
-                <UiButton variant="ghost" size="icon" :title="t('settings.closeConfig')" @click="configuringAgentId = ''">
+                <UiButton variant="ghost" size="icon" :title="t('settings.closeConfig')" @click="closeAgentConfig">
                   <X :size="16" />
                 </UiButton>
               </div>
 
-              <!-- 鍚敤寮€鍏?-->
+              <!-- 启用开关 -->
               <div class="agent-config-switch">
                 <div>
                   <strong>{{ t('settings.agentEnabled') }}</strong>
@@ -1984,7 +2417,7 @@ loadPromptContextCenter()
                 />
               </div>
 
-              <!-- 杩愯妯″紡 -->
+              <!-- 运行模式 -->
               <div class="agent-config-section">
                 <div class="agent-config-section-title">{{ t('settings.agentModeTitle') }}</div>
                 <div class="agent-mode-grid">
@@ -1995,11 +2428,11 @@ loadPromptContextCenter()
                     :class="{ active: configuringAgent.mode === mode.id }"
                     @click="updateAgentMode(configuringAgent, mode.id)"
                   >
-                    <strong>{{ mode.display_name }}</strong>
-                    <span>{{ mode.summary }}</span>
+                    <strong>{{ agentModeLabel(mode.id) }}</strong>
+                    <span>{{ agentModeSummary(mode) }}</span>
                     <small>
                       {{ t('settings.parallelExecutors') }} {{ mode.max_parallel_executors }}
-                      路 {{ mode.worktree_isolation ? t('settings.worktreeOn') : t('settings.worktreeOff') }}
+                      · {{ mode.worktree_isolation ? t('settings.worktreeOn') : t('settings.worktreeOff') }}
                     </small>
                   </button>
                 </div>
@@ -2007,12 +2440,12 @@ loadPromptContextCenter()
                   <ShieldCheck :size="16" />
                   <span>
                     {{ configuredAgentMode.approval_required ? t('settings.approvalGateOn') : t('settings.approvalGateOff') }}
-                    路 {{ configuredAgentMode.budget_policy }}
+                    · {{ agentPolicyLabel(configuredAgentMode.budget_policy) }}
                   </span>
                 </div>
               </div>
 
-              <!-- 杩愯鏉ユ簮 -->
+              <!-- 运行来源 -->
               <div class="agent-config-section">
                 <div class="agent-config-section-title">{{ t('settings.agentRuntimeSource') }}</div>
                 <div class="agent-detail-grid">
@@ -2035,27 +2468,27 @@ loadPromptContextCenter()
                 </div>
 
                 <div class="runtime-source-grid">
-                  <button :class="{ active: agentRuntimeSelection === 'inherit' }" @click="agentRuntimeSelection = 'inherit'">
+                  <button :class="{ active: agentRuntimeSelection === 'inherit' }" :aria-pressed="agentRuntimeSelection === 'inherit'" @click="agentRuntimeSelection = 'inherit'">
                     <Workflow :size="16" />
                     <strong>{{ t('settings.runtimeInherit') }}</strong>
                     <span>{{ t('settings.runtimeInheritHint') }}</span>
                   </button>
-                  <button :class="{ active: agentRuntimeSelection === 'fixed_model' }" @click="agentRuntimeSelection = 'fixed_model'">
+                  <button :class="{ active: agentRuntimeSelection === 'fixed_model' }" :aria-pressed="agentRuntimeSelection === 'fixed_model'" @click="agentRuntimeSelection = 'fixed_model'">
                     <Cpu :size="16" />
                     <strong>{{ t('settings.runtimeFixedModel') }}</strong>
                     <span>{{ t('settings.runtimeFixedModelHint') }}</span>
                   </button>
-                  <button :class="{ active: agentRuntimeSelection === 'provider_auto' }" @click="agentRuntimeSelection = 'provider_auto'">
+                  <button :class="{ active: agentRuntimeSelection === 'provider_auto' }" :aria-pressed="agentRuntimeSelection === 'provider_auto'" @click="agentRuntimeSelection = 'provider_auto'">
                     <Server :size="16" />
                     <strong>{{ t('settings.runtimeProviderAuto') }}</strong>
                     <span>{{ t('settings.runtimeProviderAutoHint') }}</span>
                   </button>
-                  <button :class="{ active: agentRuntimeSelection === 'cli' }" @click="agentRuntimeSelection = 'cli'">
+                  <button :class="{ active: agentRuntimeSelection === 'cli' }" :aria-pressed="agentRuntimeSelection === 'cli'" @click="agentRuntimeSelection = 'cli'">
                     <Terminal :size="16" />
                     <strong>CLI</strong>
                     <span>{{ t('settings.runtimeCliHint') }}</span>
                   </button>
-                  <button :class="{ active: agentRuntimeSelection === 'acp' }" @click="agentRuntimeSelection = 'acp'">
+                  <button :class="{ active: agentRuntimeSelection === 'acp' }" :aria-pressed="agentRuntimeSelection === 'acp'" @click="agentRuntimeSelection = 'acp'">
                     <Bot :size="16" />
                     <strong>ACP</strong>
                     <span>{{ t('settings.runtimeAcpHint') }}</span>
@@ -2075,7 +2508,7 @@ loadPromptContextCenter()
                   <select v-model="agentRuntimeModelKey" class="settings-select">
                     <option value="" disabled>{{ t('settings.selectModel') }}</option>
                     <option v-for="model in filteredRuntimeModels" :key="model.id" :value="modelOptionKey(model.provider_instance_id, model.model_id)">
-                      {{ model.model_id }} 路 {{ model.provider_display_name ?? model.provider_instance_id }} 路 {{ statusLabel(model.status) }}
+                      {{ model.model_id }} · {{ model.provider_display_name ?? model.provider_instance_id }} · {{ statusLabel(model.status) }}
                     </option>
                   </select>
                   <p v-if="filteredRuntimeModels.length === 0" class="agent-config-hint">{{ t('settings.noRuntimeMatches') }}</p>
@@ -2089,7 +2522,7 @@ loadPromptContextCenter()
                   <select v-model="agentRuntimeProviderId" class="settings-select">
                     <option value="" disabled>{{ t('settings.selectProvider') }}</option>
                     <option v-for="provider in filteredRuntimeProviders" :key="provider.provider_instance_id" :value="provider.provider_instance_id">
-                      {{ provider.display_name }} 路 {{ statusLabel(provider.status) }}
+                      {{ provider.display_name }} · {{ statusLabel(provider.status) }}
                     </option>
                   </select>
                   <p v-if="filteredRuntimeProviders.length === 0" class="agent-config-hint">{{ t('settings.noRuntimeMatches') }}</p>
@@ -2104,7 +2537,7 @@ loadPromptContextCenter()
                   <select v-model="agentRuntimeCliId" class="settings-select">
                     <option value="" disabled>{{ t('settings.selectCliRuntime') }}</option>
                     <option v-for="runtime in filteredRuntimeCliOptions" :key="runtime.runtime_id" :value="runtime.runtime_id">
-                      {{ runtime.display_name }} 路 {{ statusLabel(runtime.status) }}
+                      {{ runtime.display_name }} · {{ statusLabel(runtime.status) }}
                     </option>
                   </select>
                   <p v-if="filteredRuntimeCliOptions.length === 0" class="agent-config-hint">{{ t('settings.noRuntimeMatches') }}</p>
@@ -2118,7 +2551,7 @@ loadPromptContextCenter()
                   <select v-model="agentRuntimeAcpId" class="settings-select">
                     <option value="" disabled>{{ t('settings.selectAcpRuntime') }}</option>
                     <option v-for="runtime in filteredRuntimeAcpOptions" :key="runtime.runtime_id" :value="runtime.runtime_id">
-                      {{ runtime.display_name }} 路 {{ acpRuntimeSourceLabel(runtime.source) }} 路 {{ statusLabel(runtime.status) }}
+                      {{ runtime.display_name }} · {{ acpRuntimeSourceLabel(runtime.source) }} · {{ statusLabel(runtime.status) }}
                     </option>
                   </select>
                   <p v-if="filteredRuntimeAcpOptions.length === 0" class="agent-config-hint">{{ t('settings.noRuntimeMatches') }}</p>
@@ -2131,10 +2564,6 @@ loadPromptContextCenter()
                     <span>{{ t('settings.runtimeBindingPendingCoreHint') }}</span>
                   </div>
                 </div>
-                <div v-if="agentRuntimeNotice" class="runtime-binding-warning">
-                  <Info :size="16" />
-                  <span>{{ agentRuntimeNotice }}</span>
-                </div>
                 <div class="modal-actions compact">
                   <UiButton :disabled="agentRuntimeBusy || !runtimeBindingWritable || !runtimeBindingInput()" size="sm" @click="saveAgentRuntimeBinding(configuringAgent)">
                     <Save :size="14" />
@@ -2143,7 +2572,7 @@ loadPromptContextCenter()
                 </div>
               </div>
 
-              <!-- 鎻忚堪 -->
+              <!-- 描述 -->
               <div class="agent-config-section">
                 <div class="agent-config-section-title">{{ t('settings.agentDescription') }}</div>
                 <div class="settings-field">
@@ -2156,7 +2585,7 @@ loadPromptContextCenter()
                 </div>
               </div>
 
-              <!-- 宸ュ叿缁戝畾 -->
+              <!-- 工具绑定 -->
               <div class="agent-config-section">
                 <div class="agent-config-section-title">{{ t('settings.agentTools') }}</div>
                 <p class="agent-config-hint">{{ t('settings.agentToolsHint') }}</p>
@@ -2177,18 +2606,18 @@ loadPromptContextCenter()
                 </div>
               </div>
 
-              <!-- 鑳藉姏鏍囩 -->
+              <!-- 能力标签 -->
               <div class="agent-config-section">
                 <div class="agent-config-section-title">{{ t('settings.agentCapabilities') }}</div>
                 <p class="agent-config-hint">{{ t('settings.agentCapabilitiesHint') }}</p>
                 <div class="agent-capability-list">
                   <span v-for="cap in agentEditCapabilities" :key="cap" class="agent-cap-tag">
                     {{ cap }}
-                    <button class="agent-cap-remove" @click="removeAgentCapability(cap)">脳</button>
+                    <button class="agent-cap-remove" @click="removeAgentCapability(cap)">×</button>
                   </span>
                 </div>
                 <div class="agent-cap-add-row">
-                  <UiInput v-model="agentNewCapability" :placeholder="t('settings.newCapabilityPlaceholder')" size="sm" @keydown.enter="addAgentCapability" />
+                  <UiInput v-model="agentNewCapability" :placeholder="t('settings.newCapabilityPlaceholder')" @keydown.enter="addAgentCapability" />
                   <UiButton variant="outline" size="sm" :disabled="!agentNewCapability.trim()" @click="addAgentCapability">
                     <Plus :size="14" />
                     {{ t('settings.addCapability') }}
@@ -2199,7 +2628,7 @@ loadPromptContextCenter()
               <!-- System Prompt -->
               <div class="agent-config-section">
                 <div class="agent-config-section-title">{{ t('settings.agentSystemPrompt') }}</div>
-                <p class="agent-config-hint">{{ t('settings.agentSystemPromptHint') }} Saved as an agent-specific override fragment.</p>
+                <p class="agent-config-hint">{{ t('settings.agentSystemPromptOverrideHint') }}</p>
                 <div class="settings-field">
                   <textarea
                     v-model="agentEditSystemPrompt"
@@ -2210,40 +2639,36 @@ loadPromptContextCenter()
                 </div>
               </div>
 
-              <!-- 淇濆瓨鎸夐挳 -->
+              <!-- 保存按钮 -->
               <div class="agent-save-bar">
                 <UiButton :disabled="busy" @click="saveAgentProfile">
                   <Save :size="14" />
                   <span>{{ t('settings.saveAgent') }}</span>
                 </UiButton>
               </div>
-            </template>
-          </UiCard>
+            </div>
+            <div v-else class="center-empty-state inspector-empty">
+              <PanelRight :size="20" />
+              <span>{{ agents.length > 0 ? t('settings.pleaseOpenAgentConfig') : t('settings.noAgents') }}</span>
+            </div>
 
-          <div class="model-section-header">
-            <h3>{{ t('settings.evolutionCandidates') }}</h3>
-            <UiBadge variant="outline">{{ agentCandidates.length }}</UiBadge>
-          </div>
-
-          <div class="agent-candidate-grid">
-            <UiCard v-for="candidate in agentCandidates" :key="candidate.id" class="agent-candidate-card">
-              <template #content>
-                <div class="agent-candidate-head">
+            <details class="center-diagnostics-panel agent-candidates-panel">
+              <summary>
+                <span>{{ t('settings.evolutionCandidates') }}</span>
+                <UiBadge variant="outline">{{ agentCandidates.length }}</UiBadge>
+              </summary>
+              <div class="agent-candidate-list compact">
+                <article v-for="candidate in agentCandidates" :key="candidate.id" class="agent-candidate-row">
                   <div>
                     <strong>{{ candidate.name }}</strong>
-                    <span>{{ agentLayerLabel(candidate.layer) }} 路 {{ agentTypeLabel(candidate.agent_type) }} 路 {{ candidate.status }}</span>
+                    <span>{{ agentLayerLabel(candidate.layer) }} · {{ agentTypeLabel(candidate.agent_type) }} · {{ candidateStatusLabel(candidate.status) }}</span>
                   </div>
                   <UiBadge variant="secondary">{{ t('settings.generatedByEvolution') }}</UiBadge>
-                </div>
-                <p>{{ candidate.description }}</p>
-                <div class="model-capability-row">
-                  <span v-for="tool in candidate.suggested_tools" :key="tool">{{ tool }}</span>
-                </div>
-                <ul class="agent-eval-list">
-                  <li v-for="note in candidate.evaluation_notes" :key="note">{{ note }}</li>
-                </ul>
-              </template>
-            </UiCard>
+                </article>
+              </div>
+            </details>
+          </aside>
+          </div>
           </div>
         </template>
 
@@ -2512,7 +2937,7 @@ loadPromptContextCenter()
 
           <div v-if="harnessManifest" class="provider-status-note harness-manifest-note">
             <ShieldCheck :size="14" />
-            <span>{{ harnessManifest.runtime }} 路 {{ harnessManifest.ownership_model }}</span>
+            <span>{{ harnessManifest.runtime }} · {{ harnessManifest.ownership_model }}</span>
           </div>
 
           <section v-if="toolLayerReadiness" class="tool-layer-readiness-panel">
@@ -2552,7 +2977,7 @@ loadPromptContextCenter()
               >
                 <div>
                   <strong>{{ tool.display_name }}</strong>
-                  <span>{{ tool.source }} 路 {{ tool.provider_layer }} 路 {{ tool.risk }}</span>
+                  <span>{{ tool.source }} · {{ tool.provider_layer }} · {{ tool.risk }}</span>
                 </div>
                 <UiBadge :variant="readinessVariant(tool.status)">{{ tool.status }}</UiBadge>
               </div>
@@ -2563,7 +2988,7 @@ loadPromptContextCenter()
               >
                 <div>
                   <strong>{{ agent.agent_name }}</strong>
-                  <span>{{ agent.dispatchable_tool_count }} tools 路 {{ agent.unresolved_scope_count }} unresolved</span>
+                  <span>{{ agent.dispatchable_tool_count }} tools · {{ agent.unresolved_scope_count }} unresolved</span>
                 </div>
                 <UiBadge :variant="readinessVariant(agent.status)">{{ agent.status }}</UiBadge>
               </div>
@@ -2643,7 +3068,7 @@ loadPromptContextCenter()
                 <span class="harness-panel-title">{{ provider.display_name }}</span>
                 <UiBadge :variant="provider.status === 'active' ? 'secondary' : 'outline'">{{ provider.status }}</UiBadge>
               </div>
-              <p class="harness-panel-meta">{{ provider.layer }} 路 {{ provider.source }}</p>
+              <p class="harness-panel-meta">{{ provider.layer }} · {{ provider.source }}</p>
               <div class="harness-panel-stats">
                 <span>{{ t('settings.toolsCount') }} {{ provider.tool_count }}</span>
                 <span>{{ t('settings.approvalCount') }} {{ provider.approval_required_count }}</span>
@@ -2668,7 +3093,7 @@ loadPromptContextCenter()
               :class="{ risky: risk.requires_human_checkpoint }"
             >
               <span class="agent-tool-name">{{ risk.risk }}</span>
-              <span class="agent-tool-risk">{{ risk.tool_count }} 路 {{ risk.policy_summary }}</span>
+              <span class="agent-tool-risk">{{ risk.tool_count }} · {{ risk.policy_summary }}</span>
             </button>
           </div>
 
@@ -2705,7 +3130,7 @@ loadPromptContextCenter()
               :class="{ risky: result.requires_human_checkpoint }"
             >
               <span class="tool-discovery-title">{{ result.tool.display_name }}</span>
-              <span class="tool-discovery-meta">{{ result.tool.source }} 路 {{ result.provider_layer }} 路 {{ result.tool.risk }}</span>
+              <span class="tool-discovery-meta">{{ result.tool.source }} · {{ result.provider_layer }} · {{ result.tool.risk }}</span>
               <span class="tool-discovery-meta">{{ result.approval_summary }}</span>
               <span class="tool-discovery-fields">
                 {{ t('settings.matchedFields') }} {{ result.matched_fields.join(', ') }}
@@ -2737,7 +3162,7 @@ loadPromptContextCenter()
               class="agent-tool-chip"
             >
               <span class="agent-tool-name">{{ template.name }}</span>
-              <span class="agent-tool-risk">{{ template.language }} 路 {{ template.package_manager }}</span>
+              <span class="agent-tool-risk">{{ template.language }} · {{ template.package_manager }}</span>
             </button>
           </div>
 
@@ -2750,7 +3175,7 @@ loadPromptContextCenter()
             >
               <span class="agent-tool-name">{{ tool.display_name }}</span>
               <span class="agent-tool-risk">
-                {{ tool.requires_approval ? t('settings.approvalRequired') : t('settings.readOnlyTool') }} 路 {{ tool.risk }}
+                {{ tool.requires_approval ? t('settings.approvalRequired') : t('settings.readOnlyTool') }} · {{ tool.risk }}
               </span>
             </button>
           </div>
@@ -2769,7 +3194,7 @@ loadPromptContextCenter()
               :class="{ risky: tool.requires_approval }"
             >
               <span class="agent-tool-name">{{ tool.display_name }}</span>
-              <span class="agent-tool-risk">{{ tool.source }} 路 {{ tool.risk }}</span>
+              <span class="agent-tool-risk">{{ tool.source }} · {{ tool.risk }}</span>
             </button>
           </div>
         </template>
@@ -2993,6 +3418,113 @@ loadPromptContextCenter()
           </div>
         </template>
 
+        <template v-if="activeSection === 'pets'">
+          <div class="pets-heading">
+            <h2>{{ t('settings.pets') }}</h2>
+            <UiButton variant="ghost" size="icon" :title="t('settings.refresh')" :disabled="petCatalogLoading" @click="loadPets(true)">
+              <RefreshCw :size="16" :class="{ spinning: petCatalogLoading }" />
+            </UiButton>
+          </div>
+
+          <p v-if="petError" class="pets-error" role="alert">{{ petError }}</p>
+
+          <section class="pets-section downloaded-pets-section" aria-labelledby="downloaded-pets-title">
+            <div class="pets-section-heading">
+              <h3 id="downloaded-pets-title">{{ t('settings.downloadedPets') }}</h3>
+              <span class="pets-count">{{ downloadedPets.length }}</span>
+            </div>
+            <div v-if="downloadedPets.length === 0" class="pets-empty">{{ t('settings.noDownloadedPets') }}</div>
+            <div v-else class="pet-gallery downloaded-pet-gallery">
+              <article v-for="pet in downloadedPets" :key="pet.slug" class="pet-gallery-card downloaded-pet-card">
+                <div class="pet-gallery-preview">
+                  <PetPreview :src="pet.imageDataUrl" :alt="pet.displayName" loading="eager" />
+                </div>
+                <div class="pet-gallery-body">
+                  <div class="pet-gallery-title-row">
+                    <span class="pet-item-name" :title="pet.displayName">{{ pet.displayName }}</span>
+                    <UiBadge v-if="pet.enabled" variant="secondary" class="pet-card-badge">{{ t('settings.petEnabled') }}</UiBadge>
+                  </div>
+                  <span class="pet-item-meta" :title="[pet.kind, pet.submittedBy].filter(Boolean).join(' · ')">{{ pet.kind }}<template v-if="pet.submittedBy"> · {{ pet.submittedBy }}</template></span>
+                  <div class="pet-gallery-actions">
+                    <UiButton
+                      class="pet-action-button"
+                      size="sm"
+                      :variant="pet.enabled ? 'secondary' : 'outline'"
+                      :disabled="Boolean(petActionSlug)"
+                      @click="setPetEnabled(pet, !pet.enabled)"
+                    >
+                      <span class="pet-action-label">{{ pet.enabled ? t('settings.disablePet') : t('settings.enablePet') }}</span>
+                    </UiButton>
+                    <UiDropdownMenu placement="top">
+                      <template #trigger>
+                        <UiButton variant="ghost" size="icon" :title="t('settings.petMoreActions')" :disabled="Boolean(petActionSlug)">
+                          <MoreHorizontal :size="17" />
+                        </UiButton>
+                      </template>
+                      <button class="pet-menu-action" type="button" @click="openPetFolder(pet)">
+                        <FolderOpen :size="15" />
+                        {{ t('settings.openPetFolder') }}
+                      </button>
+                      <button class="pet-menu-action danger" type="button" @click="removePet(pet)">
+                        <Trash2 :size="15" />
+                        {{ t('settings.deletePet') }}
+                      </button>
+                    </UiDropdownMenu>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section class="pets-section petdex-market-section" aria-labelledby="petdex-catalog-title">
+            <div class="pets-section-heading">
+              <div>
+                <h3 id="petdex-catalog-title">{{ t('settings.petdexCatalog') }}</h3>
+                <span class="pets-count">{{ t('settings.petCatalogCount', { visible: visiblePetCatalog.length, total: matchingPetCatalog.length }) }}</span>
+              </div>
+              <div class="pets-market-filters">
+                <UiInput v-model="petCatalogQuery" :placeholder="t('settings.searchPets')" class="pets-search" />
+                <select v-model="petCatalogKind" class="pets-kind-filter" :aria-label="t('settings.petKindFilter')">
+                  <option value="all">{{ t('settings.allPetKinds') }}</option>
+                  <option v-for="kind in petCatalogKinds" :key="kind" :value="kind">{{ kind }}</option>
+                </select>
+              </div>
+            </div>
+            <div v-if="petCatalogLoading && petCatalog.length === 0" class="pets-empty">{{ t('settings.loadingPets') }}</div>
+            <div v-else-if="matchingPetCatalog.length === 0" class="pets-empty">{{ t('settings.noPetsFound') }}</div>
+            <template v-else>
+              <div class="pet-gallery pet-market-gallery">
+                <article v-for="pet in visiblePetCatalog" :key="pet.slug" class="pet-gallery-card">
+                  <div class="pet-gallery-preview">
+                    <PetPreview :src="pet.previewUrl" :alt="pet.displayName" loading="lazy" />
+                  </div>
+                  <div class="pet-gallery-body">
+                    <div class="pet-gallery-title-row">
+                      <span class="pet-item-name" :title="pet.displayName">{{ pet.displayName }}</span>
+                      <UiBadge variant="outline" class="pet-card-badge" :title="pet.kind">{{ pet.kind }}</UiBadge>
+                    </div>
+                    <span class="pet-item-meta" :title="[pet.slug, pet.submittedBy].filter(Boolean).join(' · ')">{{ pet.slug }}<template v-if="pet.submittedBy"> · {{ pet.submittedBy }}</template></span>
+                    <div class="pet-gallery-actions">
+                      <UiBadge v-if="downloadedPetBySlug.has(pet.slug)" variant="secondary" class="pet-card-badge">{{ t('settings.petDownloaded') }}</UiBadge>
+                      <UiButton v-else class="pet-action-button" size="sm" :disabled="Boolean(petActionSlug)" @click="downloadPet(pet.slug)">
+                        <Download :size="15" />
+                        <span class="pet-action-label">{{ petActionSlug === pet.slug ? t('settings.downloadingPet') : t('settings.downloadPet') }}</span>
+                      </UiButton>
+                    </div>
+                  </div>
+                </article>
+              </div>
+              <div v-if="canLoadMorePets" ref="petLoadMoreRef" class="pets-load-more">
+                <UiButton variant="outline" :disabled="petCatalogLoading" @click="loadMorePets">
+                  {{ t('settings.loadMorePets', { count: Math.min(PET_CATALOG_PAGE_SIZE, matchingPetCatalog.length - visiblePetCatalog.length) }) }}
+                </UiButton>
+              </div>
+              <div v-else class="pets-catalog-end">{{ t('settings.allPetsLoaded') }}</div>
+            </template>
+          </section>
+
+        </template>
+
         <template v-if="activeSection === 'language'">
           <h2>{{ t('settings.language') }}</h2>
           <div class="lang-options">
@@ -3001,7 +3533,7 @@ loadPromptContextCenter()
               :class="['lang-option', { active: locale === 'zh-CN' }]"
               @click="setLocale('zh-CN')"
             >
-              涓枃
+              中文
             </UiButton>
             <UiButton
               variant="outline"
@@ -3115,7 +3647,7 @@ loadPromptContextCenter()
               <Globe :size="14" />
               <span>GitHub</span>
             </UiButton>
-            <UiButton variant="outline" size="sm" class="about-link-btn" @click="openExternal('http://127.0.0.1:48730/docs')">
+            <UiButton variant="outline" size="sm" class="about-link-btn" @click="openExternal(api.gatewayUrl + '/docs')">
               <FileText :size="14" />
               <span>{{ t('settings.apiDocs') }}</span>
             </UiButton>
@@ -3134,7 +3666,13 @@ loadPromptContextCenter()
         <template #header>
           <div class="modal-header-row">
             <div class="modal-header-left">
-              <span class="modal-provider-logo" :style="{ background: brandBg(providerForm.driver), borderColor: brandColor(providerForm.driver) + '40' }" v-html="currentTemplate?.icon ?? ''"></span>
+              <span
+                class="modal-provider-logo"
+                :style="{ color: currentTemplate?.brand_color, backgroundColor: currentTemplate?.brand_bg }"
+              >
+                <span v-if="currentTemplate?.icon" class="provider-brand-mark" v-html="currentTemplate?.icon"></span>
+                <Database v-else :size="18" />
+              </span>
               <div class="modal-header-info">
                 <h3>{{ providerForm.id ? t('settings.editProviderTitle') : t('settings.newProvider') }}</h3>
                 <span class="modal-header-sub">{{ currentTemplate ? t(currentTemplate.display_name_key) : providerForm.driver }}</span>

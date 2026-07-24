@@ -1,8 +1,18 @@
 <script setup lang="ts">
 import { RouterView } from 'vue-router'
-import { ref, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import router from './router'
 import { useBackground } from '@/composables/useBackground'
+import {
+  useConnection,
+  CONNECTION_BANNER_KEY,
+  retryConnection,
+} from '@/composables/useConnection'
+import { useNotifications } from '@/composables/useNotifications'
+import AppSplash from '@/components/AppSplash.vue'
+import NotificationIslandHost from '@/components/NotificationIslandHost.vue'
+import NotificationDetailDialog from '@/components/NotificationDetailDialog.vue'
 
 // ---- Background layer (global, outside page transitions) ----
 // The background layer is ALWAYS rendered here — outside the <Transition> —
@@ -18,6 +28,46 @@ import { useBackground } from '@/composables/useBackground'
 // layer shows through.
 const { settings: backgroundSettings, applyBackground } = useBackground()
 watch(backgroundSettings, () => applyBackground(), { deep: true, immediate: true })
+
+// ---- Backend connection gating ----
+// Splash stays visible until backend connects or 30s timeout.
+// 子窗口（?splash=0，如 Debug Studio / Detached Panel）跳过 splash：
+// 它们复用主窗口已建立的后端连接，不应重播首次启动序列。
+const isChildWindow = new URLSearchParams(window.location.search).get('splash') === '0'
+const isPetWindow = window.location.hash.startsWith('#/pet')
+const { t } = useI18n()
+const { connectionState, start: startConnection } = useConnection()
+const { banner, dismissByKey } = useNotifications()
+const isConnecting = computed(() => !isChildWindow && connectionState.value === 'connecting')
+
+watch(connectionState, (state) => {
+  if (isPetWindow || isChildWindow) return
+  if (state === 'connected') {
+    dismissByKey(CONNECTION_BANNER_KEY)
+    return
+  }
+  if (state === 'timeout') {
+    banner.error({
+      key: CONNECTION_BANNER_KEY,
+      title: t('app.backendNotConnected'),
+      message: t('app.backendNotConnectedMessage'),
+      action: { label: t('app.retryConnection'), run: () => retryConnection() },
+    })
+    return
+  }
+  if (state === 'disconnected') {
+    banner.error({
+      key: CONNECTION_BANNER_KEY,
+      title: t('app.backendDisconnected'),
+      message: t('app.backendDisconnectedMessage'),
+      action: { label: t('app.retryConnection'), run: () => retryConnection() },
+    })
+  }
+})
+
+onMounted(() => {
+  if (!isPetWindow && !isChildWindow) startConnection()
+})
 
 // Track navigation direction for directional page transitions.
 // Settings is "deeper" than home, so navigating to settings slides left,
@@ -44,10 +94,26 @@ router.beforeEach((to, from, next) => {
 </script>
 
 <template>
-  <!-- Background Layer — ALWAYS rendered, outside <Transition>, never moves.
-       When type === 'none' it shows the theme's --bg-primary colour.
+  <RouterView v-if="isPetWindow" />
+
+  <template v-else>
+  <!-- Splash: shown until backend connects or 30s timeout.
+       Visual matches index.html native splash for seamless transition.
+       splash-exit Transition: logo slides up out of window + container fades. -->
+  <Transition name="splash-exit">
+    <AppSplash v-if="isConnecting" />
+  </Transition>
+
+  <!-- Background Layer — rendered as soon as splash dismisses.
+       INTENTIONALLY OUTSIDE any <Transition> / transformed ancestor:
+       CSS position:fixed degrades to absolute inside a transformed parent,
+       which would make the background slide with the page (see comment below).
        This div is the stable, static foundation of the entire window. -->
-  <div class="background-layer" :class="{ 'background-layer--none': backgroundSettings.type === 'none' }">
+  <div
+    v-if="!isConnecting"
+    class="background-layer"
+    :class="{ 'background-layer--none': backgroundSettings.type === 'none' }"
+  >
     <!-- Image Background -->
     <div
       v-if="backgroundSettings.type === 'image'"
@@ -88,9 +154,18 @@ router.beforeEach((to, from, next) => {
          from .background-layer--none CSS class. -->
   </div>
 
-  <RouterView v-slot="{ Component }">
-    <Transition :name="transitionName" mode="out-in">
-      <component :is="Component" />
-    </Transition>
-  </RouterView>
+  <!-- Main content shell.
+       main-rise 入场动画由各页面（如 HomePage）内部 <Transition> 触发，
+       而非在此处包裹 RouterView —— 因为路由组件是懒加载的，外层 Transition
+       会在子元素挂载前就移除 enter-active 类，导致动画失效。 -->
+  <div v-if="!isConnecting" class="main-content">
+    <RouterView v-slot="{ Component }">
+      <Transition :name="transitionName" :css="!isChildWindow" mode="out-in">
+        <component :is="Component" />
+      </Transition>
+    </RouterView>
+  </div>
+  <NotificationIslandHost v-if="!isConnecting" />
+  <NotificationDetailDialog v-if="!isConnecting" />
+  </template>
 </template>

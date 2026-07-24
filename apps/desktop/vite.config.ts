@@ -4,6 +4,7 @@ import { defineConfig } from 'vite';
 import path from 'path';
 
 export default defineConfig({
+  base: './',
   plugins: [vue(), tailwindcss()],
   resolve: {
     alias: {
@@ -27,6 +28,7 @@ export default defineConfig({
     ],
   },
   test: {
+    css: true,
     environment: 'node',
     include: ['src/**/*.test.ts']
   }

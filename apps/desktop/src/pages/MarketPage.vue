@@ -24,9 +24,11 @@ import { useRouter } from 'vue-router'
 import { api, type AcpAdapterDto, type ExtensionInstallPreviewDto, type ExtensionSourceDto, type InstalledExtensionDto, type MarketCatalogItemDto, type McpServerDto } from '../api'
 import AppHeader from '../components/AppHeader.vue'
 import { UiBadge, UiButton, UiInput, UiLabel } from '@/components/ui'
+import { useNotifications } from '@/composables/useNotifications'
 
 const { t } = useI18n()
 const router = useRouter()
+const { notify, banner, confirm, dismissByKey } = useNotifications()
 
 const BUILT_IN_SOURCES = [
   {
@@ -52,7 +54,7 @@ const sourceFilter = ref('')
 const query = ref('')
 const busy = ref(false)
 const loading = ref(false)
-const error = ref<string | null>(null)
+
 const preview = ref<ExtensionInstallPreviewDto | null>(null)
 const directPreview = ref<ExtensionInstallPreviewDto | null>(null)
 
@@ -144,11 +146,10 @@ function statusVariant(item: MarketCatalogItemDto) {
 
 async function run(label: string, action: () => Promise<void>) {
   busy.value = true
-  error.value = null
   try {
     await action()
   } catch (err) {
-    error.value = err instanceof Error ? err.message : `${label} failed`
+    notify.error(err, { title: `${label} failed` })
   } finally {
     busy.value = false
   }
@@ -193,19 +194,38 @@ async function loadAll() {
       sourceFilter.value = builtin?.id ?? sourceList[0]?.id ?? ''
     }
     await loadCatalog()
+    dismissByKey('market-load')
+  } catch (err) {
+    banner.error({
+      key: 'market-load',
+      title: t('market.loadFailed'),
+      message: t('app.loadFailedMessage'),
+      details: err instanceof Error ? err.message : t('market.loadFailed'),
+      action: { label: t('app.retry'), run: () => loadAll() },
+    })
   } finally {
     loading.value = false
   }
 }
 
 async function loadCatalog() {
-  catalog.value = await api.listMarketCatalog({
-    kind: kindFilter.value,
-    query: query.value.trim(),
-    source_id: sourceFilter.value || undefined,
-  })
-  if (!catalog.value.some((item) => item.catalog_id === selectedCatalogId.value)) {
-    selectedCatalogId.value = catalog.value[0]?.catalog_id ?? ''
+  try {
+    catalog.value = await api.listMarketCatalog({
+      kind: kindFilter.value,
+      query: query.value.trim(),
+      source_id: sourceFilter.value || undefined,
+    })
+    if (!catalog.value.some((item) => item.catalog_id === selectedCatalogId.value)) {
+      selectedCatalogId.value = catalog.value[0]?.catalog_id ?? ''
+    }
+    dismissByKey('market-catalog')
+  } catch (err) {
+    banner.error({
+      key: 'market-catalog',
+      title: t('market.loadFailed'),
+      message: t('app.loadFailedMessage'),
+      details: err instanceof Error ? err.message : t('market.loadFailed'),
+    })
   }
 }
 
@@ -214,7 +234,11 @@ async function loadPreview() {
     preview.value = null
     return
   }
-  preview.value = await api.previewExtensionInstall({ catalog_id: selectedItem.value.catalog_id })
+  try {
+    preview.value = await api.previewExtensionInstall({ catalog_id: selectedItem.value.catalog_id })
+  } catch (err) {
+    notify.error(err, { title: t('market.loadFailed') })
+  }
 }
 
 async function addSource() {
@@ -227,6 +251,7 @@ async function addSource() {
     })
     sourceForm.location = ''
     await loadAll()
+    notify.success('Source added.')
   })
 }
 
@@ -234,22 +259,27 @@ async function refreshSource(sourceId: string) {
   await run('refresh source', async () => {
     await api.refreshExtensionSource(sourceId)
     await loadAll()
+    notify.success('Source refreshed.')
   })
 }
 
 async function approveAndInstallCatalog() {
-  if (!selectedItem.value) return
+  const item = selectedItem.value
+  if (!item) return
   await run('install extension', async () => {
-    const first = await api.installExtension({ catalog_id: selectedItem.value?.catalog_id })
+    const first = await api.installExtension({ catalog_id: item.catalog_id })
     let installedExtension = first.extension
     if (first.approval_required && first.approval) {
       await api.decideApproval(first.approval.id, 'approved')
-      const second = await api.installExtension({ catalog_id: selectedItem.value?.catalog_id, approval_id: first.approval.id })
+      const second = await api.installExtension({ catalog_id: item.catalog_id, approval_id: first.approval.id })
       installedExtension = second.extension ?? installedExtension
     }
     await loadAll()
     await loadPreview()
-    if (installedExtension && selectedItem.value?.kind === 'mcp-server') {
+    if (!installedExtension || ['failed', 'error', 'blocked'].includes(installedExtension.status)) {
+      throw new Error(installedExtension?.status_message || `${item.display_name} was not installed.`)
+    }
+    if (item.kind === 'mcp-server') {
       const server = mcpServers.value.find((s) => s.extension_id === installedExtension!.id)
       if (server) {
         try {
@@ -259,6 +289,7 @@ async function approveAndInstallCatalog() {
         }
       }
     }
+    notify.success(installedExtension.status_message || `${item.display_name} installed.`)
   })
 }
 
@@ -280,32 +311,48 @@ async function approveAndInstallDirect() {
       manifest_json: directForm.manifest_json || null,
     }
     const first = await api.installExtension(payload)
+    let installedExtension = first.extension
     if (first.approval_required && first.approval) {
       await api.decideApproval(first.approval.id, 'approved')
-      await api.installExtension({ ...payload, approval_id: first.approval.id })
+      const second = await api.installExtension({ ...payload, approval_id: first.approval.id })
+      installedExtension = second.extension ?? installedExtension
+    }
+    if (!installedExtension || ['failed', 'error', 'blocked'].includes(installedExtension.status)) {
+      throw new Error(installedExtension?.status_message || `${first.preview.display_name} was not installed.`)
     }
     directPreview.value = null
     await loadAll()
+    notify.success(installedExtension.status_message || `${first.preview.display_name} installed.`)
   })
 }
 
 async function toggleExtension(extension: InstalledExtensionDto) {
   await run('toggle extension', async () => {
+    let updated: InstalledExtensionDto
     if (extension.enabled) {
-      await api.disableExtension(extension.id)
+      updated = await api.disableExtension(extension.id)
     } else {
-      await api.enableExtension(extension.id)
+      updated = await api.enableExtension(extension.id)
     }
     await loadAll()
     await loadPreview()
+    notify.success(updated.status_message)
   })
 }
 
 async function removeExtension(extension: InstalledExtensionDto) {
+  if (!await confirm({
+    title: t('market.uninstall'),
+    message: extension.display_name,
+    confirmLabel: t('market.uninstall'),
+    destructive: true,
+  })) return
+
   await run('remove extension', async () => {
     await api.deleteExtension(extension.id)
     await loadAll()
     await loadPreview()
+    notify.success(`${extension.display_name} removed.`)
   })
 }
 
@@ -327,7 +374,6 @@ onMounted(() => {
 <!-- Full-width draggable bar for window dragging -->
 <div class="top-drag-bar" />
 <AppHeader :busy="busy || loading" />
-    <section v-if="error" class="error-strip">{{ error }}</section>
 
     <section class="market-workspace">
       <aside class="market-rail">

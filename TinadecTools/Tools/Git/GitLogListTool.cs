@@ -44,7 +44,7 @@ public sealed class GitLogListResult
 [JsonSerializable(typeof(GitCommitSummary))]
 [JsonSerializable(typeof(GitGraphEdge))]
 [JsonSerializable(typeof(GitRef))]
-internal partial class GitLogListToolJsonContext : JsonSerializerContext;
+internal partial class GitLogListToolJsonContext : JsonSerializerContext { }
 
 internal static class GitLogListTool
 {
@@ -95,7 +95,8 @@ internal static class GitLogListTool
         if (!exec.Ok)
             return Fail(exec);
 
-        var commits = GitLogParser.ParseLog(exec.Stdout);
+        var refTypes = await LogRefTypeMap.LoadAsync(repo, cancellationToken).ConfigureAwait(false);
+        var commits = GitLogParser.ParseLog(exec.Stdout, refTypes);
         var truncated = commits.Count > limit;
         if (truncated)
             commits = commits.Take(limit).ToList();

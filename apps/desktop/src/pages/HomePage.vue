@@ -11,10 +11,16 @@ import ContextPanel from '../components/ContextPanel.vue'
 import { useAgentActivity } from '@/composables/useAgentActivity'
 import { useBackground } from '@/composables/useBackground'
 import { usePanelStyles } from '@/composables/usePanelStyles'
+import { useNotifications } from '@/composables/useNotifications'
 import type { AgentMode, PermissionLevel } from '../types/mode'
 
 const router = useRouter()
 const { t } = useI18n()
+const { notify, banner, dismissByKey } = useNotifications()
+
+// 子窗口（?splash=0）跳过 main-rise 入场动画：复用主窗口已建立的连接，不重播启动序列。
+const isChildWindow = new URLSearchParams(window.location.search).get('splash') === '0'
+const riseTransitionName = isChildWindow ? 'no-transition' : 'main-rise'
 
 const projects = ref<ProjectDto[]>([])
 const sessions = ref<SessionDto[]>([])
@@ -36,7 +42,6 @@ const modelName = ref('gpt-5.4-mini')
 const modelApiKey = ref('')
 const shellCommand = ref('npm test')
 const busy = ref(false)
-const error = ref<string | null>(null)
 const eventSource = ref<EventSource | null>(null)
 const rightRailCollapsed = ref(false)
 const rightRailWidth = ref(420)
@@ -108,18 +113,18 @@ function generateTitle(content: string): string {
 
 async function run(label: string, action: () => Promise<void>) {
   busy.value = true
-  error.value = null
   try {
     await action()
   } catch (err) {
-    error.value = err instanceof Error ? err.message : `${label} failed`
+    notify.error(err, { title: `${label} failed` })
   } finally {
     busy.value = false
   }
 }
 
 async function loadInitial() {
-  await run('load', async () => {
+  busy.value = true
+  try {
     const [projectList, settings, report, readinessReceipt] = await Promise.all([
       api.listProjects(),
       api.getModelSettings(),
@@ -134,7 +139,18 @@ async function loadInitial() {
     modelName.value = settings.model
     selectedProjectId.value = projectList[0]?.id ?? null
     await loadSessions()
-  })
+    dismissByKey('home-load')
+  } catch (err) {
+    banner.error({
+      key: 'home-load',
+      title: t('app.loadFailed'),
+      message: t('app.loadFailedMessage'),
+      details: err instanceof Error ? err.message : t('app.loadFailed'),
+      action: { label: t('app.retry'), run: () => loadInitial() },
+    })
+  } finally {
+    busy.value = false
+  }
 }
 
 async function loadSessions() {
@@ -320,15 +336,14 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <main class="shell" :style="backgroundStyle">
-    <!-- Background Layer is now rendered globally in App.vue, outside the page transition -->
+  <Transition :name="riseTransitionName" appear>
+    <main class="shell" :style="backgroundStyle">
+      <!-- Background Layer is now rendered globally in App.vue, outside the page transition -->
 
-    <!-- Full-width draggable bar for window dragging -->
-    <div class="top-drag-bar" />
+      <!-- Full-width draggable bar for window dragging -->
+      <div class="top-drag-bar" />
 
-    <AppHeader :busy="busy" />
-
-    <section v-if="error" class="error-strip">{{ error }}</section>
+      <AppHeader :busy="busy" />
 
     <section
       class="workspace"
@@ -407,5 +422,6 @@ onUnmounted(() => {
         @update:shell-command="shellCommand = $event"
       />
     </section>
-  </main>
+    </main>
+  </Transition>
 </template>

@@ -64,7 +64,7 @@ public sealed class GitLogDetailResult
 [JsonSerializable(typeof(GitPatchFile))]
 [JsonSerializable(typeof(GitDiffHunk))]
 [JsonSerializable(typeof(GitDiffLine))]
-internal partial class GitLogDetailToolJsonContext : JsonSerializerContext;
+internal partial class GitLogDetailToolJsonContext : JsonSerializerContext { }
 
 internal static class GitLogDetailTool
 {
@@ -115,7 +115,8 @@ internal static class GitLogDetailTool
         if (!meta.Ok)
             return Fail(meta);
 
-        var commits = GitLogParser.ParseLog(meta.Stdout);
+        var refTypes = await LogRefTypeMap.LoadAsync(repo, cancellationToken).ConfigureAwait(false);
+        var commits = GitLogParser.ParseLog(meta.Stdout, refTypes);
         LaneAssigner.Assign(commits);
 
         var ns = await GitCli.RunAsync(repo, ["diff-tree", "-r", "--root", "--name-status", "-M", hash], stdin: null, cancellationToken, timeoutMs: 15_000).ConfigureAwait(false);
@@ -188,7 +189,8 @@ internal static class GitLogDetailTool
         if (!meta.Ok)
             return Fail(meta);
 
-        var commits = GitLogParser.ParseLog(meta.Stdout);
+        var refTypes = await LogRefTypeMap.LoadAsync(repo, cancellationToken).ConfigureAwait(false);
+        var commits = GitLogParser.ParseLog(meta.Stdout, refTypes);
         var truncated = commits.Count > limit;
         string? truncationReason = truncated ? "limit" : null;
         if (truncated)

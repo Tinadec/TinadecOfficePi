@@ -19,6 +19,7 @@ import CodeViewer from '@/components/code/CodeViewer.vue'
 import CodeEditor from '@/components/code/CodeEditor.vue'
 import PatchPreview from '@/components/code/PatchPreview.vue'
 import { UiButton, UiSelect } from '@/components/ui'
+import { useNotifications } from '@/composables/useNotifications'
 
 interface OpenTab {
   path: string
@@ -27,6 +28,7 @@ interface OpenTab {
 }
 
 const router = useRouter()
+const { notify, banner, dismissByKey } = useNotifications()
 
 const projects = ref<ProjectDto[]>([])
 const selectedProjectId = ref<string | null>(null)
@@ -40,7 +42,6 @@ const patchOriginal = ref('')
 const patchModified = ref('')
 const patchFilePath = ref('')
 const busy = ref(false)
-const error = ref<string | null>(null)
 
 const currentProject = computed(() =>
   projects.value.find((p) => p.id === selectedProjectId.value) ?? null,
@@ -52,15 +53,21 @@ const activeTab = computed(() =>
 
 async function loadProjects(): Promise<void> {
   busy.value = true
-  error.value = null
   try {
     projects.value = await api.listProjects()
     if (!selectedProjectId.value && projects.value.length > 0) {
       selectedProjectId.value = projects.value[0].id
     }
     await loadSession()
+    dismissByKey('code-load')
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Failed to load projects'
+    banner.error({
+      key: 'code-load',
+      title: 'Failed to load projects',
+      message: 'The project list is currently unavailable.',
+      details: err instanceof Error ? err.message : 'Failed to load projects',
+      action: { label: 'Retry', run: () => loadProjects() },
+    })
   } finally {
     busy.value = false
   }
@@ -80,7 +87,7 @@ async function loadSession(): Promise<void> {
 
 async function loadApprovals(): Promise<void> {
   try {
-    const list = await api.listApprovals(selectedSessionId.value ?? undefined, 'pending')
+    const list = await api.listApprovals(selectedSessionId.value ?? undefined)
     approvals.value = list
   } catch {
     approvals.value = []
@@ -133,7 +140,7 @@ async function decideApproval(approval: ApprovalDto, decision: 'approved' | 'rej
     await api.decideApproval(approval.id, decision)
     await loadApprovals()
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Failed to decide approval'
+    notify.error(err, { title: 'Failed to decide approval' })
   }
 }
 
@@ -145,9 +152,10 @@ function handleShowPatch(filePath: string, original: string, modified: string): 
 }
 
 function handleNewFile(): void {
-  // Placeholder: in a real implementation, this would open a dialog to enter a file name
-  // and then create the file through the API (with approval)
-  error.value = 'New file creation requires an approval flow. Use the chat panel to request file creation.'
+  notify.info({
+    title: 'New file',
+    message: 'New file creation requires an approval flow. Use the chat panel to request file creation.',
+  })
 }
 
 function handleRefresh(): void {
@@ -170,8 +178,6 @@ onMounted(() => {
 <!-- Full-width draggable bar for window dragging -->
 <div class="top-drag-bar" />
 <AppHeader :busy="busy" />
-
-    <section v-if="error" class="error-strip">{{ error }}</section>
 
     <section class="code-workspace">
       <!-- Top toolbar -->
@@ -460,12 +466,5 @@ onMounted(() => {
   height: 100%;
   color: var(--text-muted);
   font-size: 13px;
-}
-.error-strip {
-  padding: 6px 12px;
-  font-size: 12px;
-  color: var(--text-error);
-  background: var(--bg-error);
-  border-bottom: 1px solid var(--border-error);
 }
 </style>
