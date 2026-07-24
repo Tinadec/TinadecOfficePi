@@ -1,20 +1,21 @@
 {
-  "name": "tinadec-office",
+  "name": "tinadec-pi",
   "version": "0.1.0",
   "private": true,
   "license": "GPL-3.0-or-later",
   "workspaces": [
     "apps/*",
+    "core",
     "gateway"
   ],
   "scripts": {
     "dev": "concurrently -n core,gateway,desktop -c blue,magenta,green \"npm run dev:core\" \"npm run dev:gateway\" \"npm run dev:desktop\"",
-    "dev:core": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Remove-Item Env:Version -ErrorAction SilentlyContinue; Remove-Item Env:Ice-Version -ErrorAction SilentlyContinue; dotnet run --project src/TinadecCore/TinadecCore.csproj --urls http://127.0.0.1:48731\"",
+    "dev:core": "npm run dev -w @tinadec/pi-core",
     "dev:gateway": "npm run dev -w @tinadec/gateway",
     "dev:desktop": "npm run dev -w @tinadec/desktop",
-    "build": "npm run build --workspaces --if-present && powershell -NoProfile -ExecutionPolicy Bypass -Command \"Remove-Item Env:Version -ErrorAction SilentlyContinue; Remove-Item Env:Ice-Version -ErrorAction SilentlyContinue; dotnet build TinadecOffice.slnx --no-restore\"",
-    "test": "npm run test --workspaces --if-present && powershell -NoProfile -ExecutionPolicy Bypass -Command \"Remove-Item Env:Version -ErrorAction SilentlyContinue; Remove-Item Env:Ice-Version -ErrorAction SilentlyContinue; dotnet test TinadecOffice.slnx --no-build\"",
-    "restore:dotnet": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Remove-Item Env:Version -ErrorAction SilentlyContinue; Remove-Item Env:Ice-Version -ErrorAction SilentlyContinue; dotnet restore TinadecOffice.slnx\"",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "build:tools": "dotnet build TinadecTools/TinadecTools.csproj",
     "ai:codegraph:init": "codegraph init",
     "ai:codegraph:sync": "codegraph sync",
     "ai:codegraph:status": "codegraph status",

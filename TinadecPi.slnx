@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="TinadecTools.Generators/TinadecTools.Generators.csproj" />
+  <Folder Name="/tests/">
+    <Project Path="tests/TinadecTools.Tests/TinadecTools.Tests.csproj" />
+  </Folder>
+  <Project Path="TinadecTools/TinadecTools.csproj" />
+</Solution>

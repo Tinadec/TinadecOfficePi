@@ -17,6 +17,7 @@ output/
 .idea/
 /.tinadec/sandbox.json
 /.tinadec/worktrees/
+**/.tinadec-pi/
 .opencode/
 *.log
 config.json
