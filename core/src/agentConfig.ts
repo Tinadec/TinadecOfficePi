@@ -98,9 +98,9 @@ const AGENT_DEFAULTS: ReadonlyArray<
 		["read", "grep", "find", "ls"],
 	],
 	[
-		"execution-task-planner",
+		"operation-task-planner",
 		"Task Planner",
-		"execution",
+		"operation",
 		"task_planner",
 		"Builds a dependency-aware execution plan.",
 		["read", "grep", "find", "ls"],
@@ -409,7 +409,7 @@ const RUNTIME_AGENTS: Record<string, string> = {
 	"operation-skill-recommender": "skill-recommender",
 	"operation-supervisor": "supervisor",
 	"operation-evolution": "evolution",
-	"execution-task-planner": "task-planner",
+	"operation-task-planner": "task-planner",
 	"execution-worker-pool": "worker-pool",
 };
 
@@ -445,7 +445,7 @@ export function fullDuplexRunConfig(
 		}
 		for (const required of [
 			"operation-supervisor",
-			"execution-task-planner",
+			"operation-task-planner",
 			"execution-worker-pool",
 		]) {
 			if (!activeProfiles.some((agent) => agent.id === required)) {

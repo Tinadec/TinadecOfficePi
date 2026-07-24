@@ -902,10 +902,12 @@ export class PiHarness {
 
 	async availableModels(): Promise<ModelInfo[]> {
 		const runtime = await this.modelRuntime;
-		return (await runtime.getAvailable()).flatMap((model) => {
+		const models = new Map<string, ModelInfo>();
+		for (const model of await runtime.getAvailable()) {
 			const info = modelInfo(model);
-			return info ? [info] : [];
-		});
+			if (info) models.set(`${info.provider}/${info.id}`, info);
+		}
+		return [...models.values()];
 	}
 
 	async reloadModels(): Promise<ModelInfo[]> {
