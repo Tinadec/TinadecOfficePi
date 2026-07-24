@@ -18,6 +18,7 @@ output/
 /.tinadec/sandbox.json
 /.tinadec/worktrees/
 **/.tinadec-pi/
+.pi-subagents/
 .opencode/
 *.log
 config.json

@@ -28,6 +28,7 @@ const emit = defineEmits<{
 
 const showDropdown = ref(false)
 const triggerRef = ref<HTMLElement | null>(null)
+const dropdownRef = ref<HTMLElement | null>(null)
 const dropdownStyle = ref<Record<string, string>>({})
 
 const currentPermission = computed(() => permissions.value.find(p => p.key === props.modelValue) ?? permissions.value[0])
@@ -36,11 +37,21 @@ function updateDropdownPosition() {
   const trigger = triggerRef.value
   if (!trigger) return
   const rect = trigger.getBoundingClientRect()
+  const margin = 8
+  const spaceAbove = rect.top - margin
+  const spaceBelow = window.innerHeight - rect.bottom - margin
+  const menuHeight = Math.min(dropdownRef.value?.offsetHeight ?? 160, 240)
+  const above = spaceAbove >= menuHeight || spaceAbove > spaceBelow
+  const maxHeight = Math.max(96, Math.min(menuHeight, above ? spaceAbove : spaceBelow))
   dropdownStyle.value = {
     position: 'fixed',
-    top: `${rect.bottom + 6}px`,
-    left: `${rect.left}px`,
+    top: `${above
+      ? Math.max(margin, rect.top - maxHeight - 6)
+      : Math.min(window.innerHeight - margin - maxHeight, rect.bottom + 6)}px`,
+    left: `${Math.max(margin, Math.min(rect.left, window.innerWidth - 188))}px`,
     minWidth: '180px',
+    maxHeight: `${maxHeight}px`,
+    overflowY: 'auto',
   }
 }
 
@@ -64,8 +75,20 @@ function handleClickOutside(event: MouseEvent) {
   }
 }
 
-onMounted(() => document.addEventListener('click', handleClickOutside))
-onUnmounted(() => document.removeEventListener('click', handleClickOutside))
+function handleViewportChange() {
+  if (showDropdown.value) updateDropdownPosition()
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+  window.addEventListener('resize', handleViewportChange)
+  window.addEventListener('scroll', handleViewportChange, true)
+})
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside)
+  window.removeEventListener('resize', handleViewportChange)
+  window.removeEventListener('scroll', handleViewportChange, true)
+})
 </script>
 
 <template>
@@ -83,6 +106,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
     <Teleport to="body">
       <div
         v-if="showDropdown"
+        ref="dropdownRef"
         class="permission-selector-portal"
         :style="dropdownStyle"
       >

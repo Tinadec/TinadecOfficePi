@@ -25,11 +25,11 @@ describe('local pet window shell', () => {
   })
 
   it('keeps Petdex download and local pet actions inside the desktop process', () => {
-    expect(preload).toContain("ipcRenderer.invoke('tinadec:pet-create', petId)")
-    expect(preload).toContain("ipcRenderer.invoke('tinadec:pet-close', instanceId)")
-    expect(preload).toContain("ipcRenderer.invoke('tinadec:pet-download', slug)")
-    expect(preload).toContain("ipcRenderer.invoke('tinadec:pet-open-folder', slug)")
-    expect(preload).toContain("ipcRenderer.invoke('tinadec:pet-remove', slug)")
+    expect(preload).toContain('ipcRenderer.invoke("tinadec:pet-create", petId)')
+    expect(preload).toContain('ipcRenderer.invoke("tinadec:pet-close", instanceId)')
+    expect(preload).toContain('ipcRenderer.invoke("tinadec:pet-download", slug)')
+    expect(preload).toContain('ipcRenderer.invoke("tinadec:pet-open-folder", slug)')
+    expect(preload).toContain('ipcRenderer.invoke("tinadec:pet-remove", slug)')
     expect(petStore).toContain("const PETDEX_MANIFEST_URL = 'https://petdex.dev/api/manifest/v2'")
     expect(petStore).toContain('manifest.v !== 2')
     expect(petStore).toContain("app.getPath('userData')")
@@ -37,8 +37,8 @@ describe('local pet window shell', () => {
     expect(petStore).toContain("Referer: 'https://petdex.dev/'")
     expect(petStore).toContain('const previewRequests = new Map()')
     expect(petStore).toContain('MAX_PREVIEW_CACHE_BYTES')
-    expect(mainProcess).toContain("scheme: 'tinadec-pet-preview'")
-    expect(mainProcess).toContain("protocol.handle('tinadec-pet-preview'")
+    expect(mainProcess).toContain('scheme: "tinadec-pet-preview"')
+    expect(mainProcess).toContain('protocol.handle("tinadec-pet-preview"')
     expect(petStore).toContain('await fs.rename(temporary, destination)')
     expect(router).toContain("path: '/pet'")
     expect(app).toContain("const isPetWindow = window.location.hash.startsWith('#/pet')")
@@ -51,7 +51,7 @@ describe('local pet window shell', () => {
     expect(desktopPetPage).toContain('Math.min(1.2, Math.max(0.18, next))')
     expect(desktopPetPage).toContain("setState('running-right')")
     expect(petStore).not.toContain('normalizePetDefinition')
-    expect(preload).toContain("ipcRenderer.on('tinadec:pet-changed', handler)")
+    expect(preload).toContain('ipcRenderer.on("tinadec:pet-changed", handler)')
   })
 
   it('keeps downloaded pets above a lazy, incrementally rendered market gallery', () => {

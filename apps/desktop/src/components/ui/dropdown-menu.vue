@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { cn } from '@/lib/utils'
-import { ref, watch } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
 interface Props {
   open?: boolean
@@ -17,36 +17,92 @@ const emit = defineEmits<{
 }>()
 
 const isOpen = ref(props.open)
+const triggerRef = ref<HTMLElement | null>(null)
+const menuRef = ref<HTMLElement | null>(null)
+const menuStyle = ref<Record<string, string>>({})
 
-watch(() => props.open, (val) => {
-  isOpen.value = val
+function updatePosition() {
+  const trigger = triggerRef.value
+  const menu = menuRef.value
+  if (!trigger || !menu) return
+
+  const rect = trigger.getBoundingClientRect()
+  const gap = 6
+  const margin = 8
+  const menuHeight = Math.min(menu.offsetHeight || 240, window.innerHeight - margin * 2)
+  const menuWidth = menu.offsetWidth || 128
+  const spaceAbove = rect.top - margin
+  const spaceBelow = window.innerHeight - rect.bottom - margin
+  const above = props.placement === 'top'
+    ? spaceAbove >= 96 || spaceAbove >= spaceBelow
+    : spaceBelow < 96 && spaceAbove > spaceBelow
+  const maxHeight = Math.max(96, Math.min(menuHeight, above ? spaceAbove : spaceBelow))
+
+  menuStyle.value = {
+    position: 'fixed',
+    top: `${above
+      ? Math.max(margin, rect.top - gap - maxHeight)
+      : Math.min(window.innerHeight - margin - maxHeight, rect.bottom + gap)}px`,
+    left: `${Math.max(margin, Math.min(rect.left, window.innerWidth - menuWidth - margin))}px`,
+    maxHeight: `${maxHeight}px`,
+  }
+}
+
+async function setOpen(next: boolean) {
+  isOpen.value = next
+  emit('update:open', next)
+  if (next) {
+    await nextTick()
+    updatePosition()
+  }
+}
+
+function handlePointerDown(event: PointerEvent) {
+  const target = event.target as Node
+  if (!triggerRef.value?.contains(target) && !menuRef.value?.contains(target)) {
+    void setOpen(false)
+  }
+}
+
+function handleViewportChange() {
+  if (isOpen.value) updatePosition()
+}
+
+watch(() => props.open, (value) => {
+  isOpen.value = value
+  if (value) void nextTick(updatePosition)
 })
 
-function close() {
-  isOpen.value = false
-  emit('update:open', false)
-}
+onMounted(() => {
+  document.addEventListener('pointerdown', handlePointerDown)
+  window.addEventListener('resize', handleViewportChange)
+  window.addEventListener('scroll', handleViewportChange, true)
+})
 
-function open() {
-  isOpen.value = true
-  emit('update:open', true)
-}
+onUnmounted(() => {
+  document.removeEventListener('pointerdown', handlePointerDown)
+  window.removeEventListener('resize', handleViewportChange)
+  window.removeEventListener('scroll', handleViewportChange, true)
+})
 </script>
 
 <template>
-  <div class="relative">
-    <div @click="isOpen ? close() : open()">
+  <div ref="triggerRef" class="relative">
+    <div @click="setOpen(!isOpen)">
       <slot name="trigger" />
     </div>
+  </div>
+  <Teleport to="body">
     <div
       v-if="isOpen"
+      ref="menuRef"
       :class="cn(
-        'absolute z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md',
-        placement === 'top' ? 'bottom-full mb-1' : 'top-full mt-1',
+        'fixed z-[10000] min-w-[8rem] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md',
         props.class,
       )"
+      :style="menuStyle"
     >
       <slot />
     </div>
-  </div>
+  </Teleport>
 </template>

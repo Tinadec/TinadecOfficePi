@@ -1,44 +1,38 @@
 <script setup lang="ts">
 import { Bot } from '@lucide/vue'
-import { useI18n } from 'vue-i18n'
 import { UiScrollArea } from '@/components/ui'
-import type { MessageDto } from '../api'
+import type { PiArtifactDto, MessageDto } from '../api'
 import MessageItem from './MessageItem.vue'
-import type { ThinkingStep, ToolCall } from '@/composables/useAgentActivity'
 
-const { t } = useI18n()
-
-defineProps<{
+const props = defineProps<{
   messages: MessageDto[]
-  thinkingSteps?: ThinkingStep[]
-  toolCalls?: ToolCall[]
-  agentLabel?: string | null
+  artifactsByRun?: Record<string, PiArtifactDto[]>
+  streamingStatus?: string
 }>()
 
 const emit = defineEmits<{
-  approve: [approvalId: string]
-  reject: [approvalId: string]
+  'download-artifact': [artifact: PiArtifactDto]
+  'continue-artifact': [artifact: PiArtifactDto]
 }>()
 </script>
 
 <template>
   <div class="message-stream-container">
     <UiScrollArea class="message-stream">
-      <div class="message-stream-inner">
+      <div class="message-stream-inner" aria-live="polite">
         <MessageItem
           v-for="(message, index) in messages"
           :key="message.id"
           :message="message"
           :index="index"
-          :thinking-steps="message.role === 'assistant' ? thinkingSteps : undefined"
-          :tool-calls="message.role === 'assistant' ? toolCalls : undefined"
-          :agent-label="message.role === 'assistant' ? agentLabel : null"
-          @approve="emit('approve', $event)"
-          @reject="emit('reject', $event)"
+          :streaming-status="message.id.startsWith('stream-') ? streamingStatus : undefined"
+          :artifacts="message.run_id ? artifactsByRun?.[message.run_id] ?? [] : []"
+          @download-artifact="emit('download-artifact', $event)"
+          @continue-artifact="emit('continue-artifact', $event)"
         />
         <div v-if="messages.length === 0" class="empty-state">
           <Bot :size="20" />
-          <span>{{ t('chat.ready') }}</span>
+          <span>{{ $t('chat.ready') }}</span>
         </div>
       </div>
     </UiScrollArea>

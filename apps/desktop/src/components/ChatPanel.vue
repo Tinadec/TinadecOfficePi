@@ -1,13 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, toRef } from 'vue'
-import ChatHeader from './ChatHeader.vue'
+import { computed, ref } from 'vue'
 import MessageList from './MessageList.vue'
 import ComposerBar from './ComposerBar.vue'
 import WelcomeScreen from './WelcomeScreen.vue'
 import { useChatResponsiveMode } from '@/composables/useElementSize'
-import type { MessageDto, SessionDto, ProjectDto, OrchestrationSnapshotDto } from '../api'
+import type { MessageDto, SessionDto, ProjectDto, OrchestrationSnapshotDto, PiArtifactDto, PiModelDto, PiThinkingLevel } from '../api'
 import type { AgentMode, PermissionLevel } from '@/types/mode'
-import type { ThinkingStep, ToolCall } from '@/composables/useAgentActivity'
 
 const props = defineProps<{
   messages: MessageDto[]
@@ -17,15 +15,18 @@ const props = defineProps<{
   currentProject: ProjectDto | null
   selectedProjectId: string | null
   modelName: string
+  models?: PiModelDto[]
+  runtimeReady?: boolean
+  thinkingLevel?: PiThinkingLevel
+  thinkingLevels?: PiThinkingLevel[]
   orchestration: OrchestrationSnapshotDto | null
+  artifactsByRun?: Record<string, PiArtifactDto[]>
+  streamingStatus?: string
   busy: boolean
+  isRunning?: boolean
   draft: string
   mode: AgentMode
   permission: PermissionLevel
-  /** Agent activity data — now owned by HomePage, passed down for per-message rendering */
-  thinkingSteps?: ThinkingStep[]
-  toolCalls?: ToolCall[]
-  agentLabel?: string | null
   panelStyle?: Record<string, string>
   panelDataAttrs?: Record<string, string>
 }>()
@@ -34,6 +35,10 @@ const emit = defineEmits<{
   'update:draft': [value: string]
   'update:mode': [value: AgentMode]
   'update:permission': [value: PermissionLevel]
+  'select-model': [model: PiModelDto]
+  'update:thinkingLevel': [level: PiThinkingLevel]
+  'download-artifact': [artifact: PiArtifactDto]
+  'continue-artifact': [artifact: PiArtifactDto]
   'send': []
   'welcome-send': [content: string]
   'create-project': []
@@ -68,6 +73,12 @@ function handleReject(approvalId: string) {
           :projects="props.projects"
           :selected-project-id="selectedProjectId"
           :model-name="modelName"
+          :models="models ?? []"
+          :runtime-ready="runtimeReady ?? false"
+          :thinking-level="thinkingLevel ?? 'off'"
+          :thinking-levels="thinkingLevels ?? ['off']"
+          :mode="mode"
+          :permission="permission"
           :busy="busy"
           :panel-style="panelStyle"
           :panel-data-attrs="panelDataAttrs"
@@ -76,27 +87,37 @@ function handleReject(approvalId: string) {
           @select-project="emit('select-project', $event)"
           @update:mode="emit('update:mode', $event)"
           @update:permission="emit('update:permission', $event)"
+          @select-model="emit('select-model', $event)"
+          @update:thinking-level="emit('update:thinkingLevel', $event)"
         />
       </template>
       <template v-else>
         <div class="chat-active-panel" key="chat-active" :style="panelStyle" v-bind="panelDataAttrs">
-          <ChatHeader :current-session="currentSession" />
           <MessageList
             :messages="messages"
-            :thinking-steps="thinkingSteps"
-            :tool-calls="toolCalls"
-            :agent-label="agentLabel"
+            :artifacts-by-run="artifactsByRun ?? {}"
+            :streaming-status="streamingStatus"
+            @download-artifact="emit('download-artifact', $event)"
+            @continue-artifact="emit('continue-artifact', $event)"
             @approve="handleApprove"
             @reject="handleReject"
           />
           <ComposerBar
             :busy="busy"
+            :is-running="isRunning"
             :model-value="draft"
+            :model-name="modelName"
+            :models="models ?? []"
+            :runtime-ready="runtimeReady ?? false"
+            :thinking-level="thinkingLevel ?? 'off'"
+            :thinking-levels="thinkingLevels ?? ['off']"
             :mode="mode"
             :permission="permission"
             @update:model-value="emit('update:draft', $event)"
             @update:mode="emit('update:mode', $event)"
             @update:permission="emit('update:permission', $event)"
+            @select-model="emit('select-model', $event)"
+            @update:thinking-level="emit('update:thinkingLevel', $event)"
             @submit="emit('send')"
           />
         </div>

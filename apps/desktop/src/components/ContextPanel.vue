@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ExternalLink, Home as HomeIcon, PanelRightClose, PanelRightOpen, Plus, X, type LucideIcon } from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
 import ApprovalTab from './ApprovalTab.vue'
@@ -13,8 +13,8 @@ import AgentActivityPanel from './AgentActivityPanel.vue'
 import TerminalPanel from './TerminalPanel.vue'
 import { usePanelTabs, panelIcons, type PanelType, type PanelTab } from '../composables/usePanelTabs'
 import { useResponsiveMode, useTabLabelMode } from '../composables/useElementSize'
-import type { ApprovalDto, EventEnvelope, DoctorReportDto, OrchestrationSnapshotDto, RuntimeReadinessReceiptDto, ToolExecutionTimelineItemDto } from '../api'
-import type { AgentActivity, AgentState, ThinkingStep, ProgressEvent } from '@/composables/useAgentActivity'
+import type { ApprovalDto, EventEnvelope, DoctorReportDto, OrchestrationSnapshotDto, PiSessionStateDto, RuntimeReadinessReceiptDto, ToolExecutionTimelineItemDto } from '../api'
+import type { AgentActivity, AgentState, ThinkingStep, ProgressEvent, ToolCall } from '@/composables/useAgentActivity'
 
 const { t } = useI18n()
 
@@ -38,7 +38,9 @@ const props = defineProps<{
   agentActivity: AgentActivity
   agentStates: Record<string, AgentState>
   thinkingSteps: ThinkingStep[]
+  toolCalls?: ToolCall[]
   progressEvents: ProgressEvent[]
+  piSessionState?: PiSessionStateDto | null
   panelStyle?: Record<string, string>
   panelDataAttrs?: Record<string, string>
 }>()
@@ -47,6 +49,7 @@ const emit = defineEmits<{
   'request-approval': []
   'decide-approval': [approval: ApprovalDto, decision: 'approved' | 'rejected']
   'approval-created': [approval: ApprovalDto]
+  'abort-run': []
   'update:shellCommand': [value: string]
 }>()
 
@@ -87,6 +90,15 @@ const panelClass = computed(() => ({
 
 const pendingApprovalCount = computed(() =>
   props.approvals?.filter((a) => a.status === 'pending').length ?? 0,
+)
+
+watch(
+  () => props.agentActivity.runId,
+  (runId, previousRunId) => {
+    if (!runId || runId === previousRunId) return
+    collapsed.value = false
+    openPanel('agent', t('agent.agent'), panelIcons.Bot)
+  },
 )
 
 function handleOpenPanel(type: PanelType, title: string, icon: LucideIcon) {
@@ -510,7 +522,10 @@ function startResize(event: MouseEvent) {
             :activity="agentActivity"
             :agent-states="agentStates"
             :thinking-steps="thinkingSteps"
+            :tool-calls="toolCalls ?? []"
             :progress-events="progressEvents"
+            :pi-session-state="piSessionState"
+            @abort="emit('abort-run')"
             :orchestration="orchestration"
           />
         </div>

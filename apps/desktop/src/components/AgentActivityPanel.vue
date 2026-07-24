@@ -23,11 +23,14 @@ import {
   Package,
   MessageSquare,
   Terminal,
+  Square,
+  Database,
 } from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
-import type { AgentActivity, AgentState, ThinkingStep, ProgressEvent } from '@/composables/useAgentActivity'
-import type { AgentAssignmentDto, OrchestrationSnapshotDto, TaskNodeDto } from '../api'
+import type { AgentActivity, AgentState, ThinkingStep, ProgressEvent, ToolCall } from '@/composables/useAgentActivity'
+import type { AgentAssignmentDto, OrchestrationSnapshotDto, PiSessionStateDto, TaskNodeDto } from '../api'
 import AgentStatusIndicator from './chat/AgentStatusIndicator.vue'
+import ToolCallCard from './chat/ToolCallCard.vue'
 
 const { t } = useI18n()
 
@@ -35,8 +38,14 @@ const props = defineProps<{
   activity: AgentActivity
   agentStates: Record<string, AgentState>
   thinkingSteps: ThinkingStep[]
+  toolCalls?: ToolCall[]
   progressEvents: ProgressEvent[]
   orchestration: OrchestrationSnapshotDto | null
+  piSessionState?: PiSessionStateDto | null
+}>()
+
+const emit = defineEmits<{
+  abort: []
 }>()
 
 // ---- Section collapse state ----
@@ -83,9 +92,16 @@ const progressPercent = computed(() => {
   return Math.min(100, (props.activity.completedNodes / props.activity.totalNodes) * 100)
 })
 
+const canAbort = computed(() =>
+  props.activity.status === 'thinking' ||
+  props.activity.status === 'working' ||
+  props.activity.status === 'waiting_approval',
+)
+
 // ---- Agent list ----
 const agentList = computed(() => Object.values(props.agentStates))
-const planningAgents = computed(() => agentList.value.filter((a) => a.agentLayer === 'planning'))
+const visibleToolCalls = computed(() => props.toolCalls ?? [])
+const planningAgents = computed(() => agentList.value.filter((a) => a.agentLayer === 'operation' || a.agentLayer === 'planning'))
 const executionAgents = computed(() => agentList.value.filter((a) => a.agentLayer === 'execution'))
 
 const hasActivity = computed(
@@ -93,7 +109,8 @@ const hasActivity = computed(
     props.activity.status !== 'idle' ||
     props.activity.runId !== null ||
     props.activity.activeAgentName !== null ||
-    agentList.value.length > 0,
+    agentList.value.length > 0 ||
+    visibleToolCalls.value.length > 0,
 )
 
 // ---- Task graph ----
@@ -200,6 +217,11 @@ const visibleProgressEvents = computed(() => [...props.progressEvents].slice(-15
 
 <template>
   <section class="agent-activity-panel">
+    <div class="agent-runtime-strip">
+      <span :class="{ ready: piSessionState?.multi_agent }"><Network :size="11" /> DmaEA {{ piSessionState?.multi_agent ? 'READY' : 'OFF' }}</span>
+      <span :class="{ ready: piSessionState?.observational_memory }"><Database :size="11" /> OMEM {{ piSessionState?.observational_memory ? 'READY' : 'OFF' }}</span>
+      <span v-if="orchestration?.run?.config_version">CFG v{{ orchestration.run.config_version }}</span>
+    </div>
     <!-- Empty state -->
     <div v-if="!hasActivity && !orchestration" class="agent-panel-empty">
       <Activity :size="28" />
@@ -233,6 +255,15 @@ const visibleProgressEvents = computed(() => [...props.progressEvents].slice(-15
             </div>
           </div>
           <div class="agent-panel-status-right">
+            <button
+              v-if="canAbort"
+              class="agent-panel-abort"
+              type="button"
+              :title="t('chat.interrupt')"
+              @click.stop="emit('abort')"
+            >
+              <Square :size="12" />
+            </button>
             <div v-if="activity.totalNodes > 0" class="agent-panel-progress">
               <div class="agent-panel-progress-bar">
                 <div class="agent-panel-progress-fill" :style="{ width: `${progressPercent}%` }" />
@@ -245,7 +276,7 @@ const visibleProgressEvents = computed(() => [...props.progressEvents].slice(-15
 
         <Transition name="agent-section-expand">
           <div v-if="statusExpanded" class="agent-panel-section-body">
-            <!-- Planning agents -->
+            <!-- Operation agents -->
             <div v-if="planningAgents.length > 0" class="agent-panel-agent-group">
               <span class="agent-panel-group-title">{{ t('agent.planningLayer') }}</span>
               <div class="agent-panel-agent-grid">
@@ -315,6 +346,24 @@ const visibleProgressEvents = computed(() => [...props.progressEvents].slice(-15
             </ol>
           </div>
         </Transition>
+      </article>
+
+      <!-- ===== Tool activity section ===== -->
+      <article v-if="visibleToolCalls.length > 0" class="agent-panel-section">
+        <div class="agent-panel-section-head agent-panel-progress-head">
+          <div class="agent-panel-section-title">
+            <Terminal :size="12" />
+            <span>工具活动</span>
+            <span class="agent-panel-count-badge">{{ visibleToolCalls.length }}</span>
+          </div>
+        </div>
+        <div class="agent-panel-section-body agent-panel-tool-list">
+          <ToolCallCard
+            v-for="toolCall in visibleToolCalls"
+            :key="toolCall.id"
+            :tool-call="toolCall"
+          />
+        </div>
       </article>
 
       <!-- ===== Thinking steps section ===== -->
@@ -408,6 +457,29 @@ const visibleProgressEvents = computed(() => [...props.progressEvents].slice(-15
   padding: 10px;
   height: 100%;
   overflow-y: auto;
+}
+
+.agent-runtime-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 24px;
+  padding: 4px 7px;
+  border-block-end: 1px solid var(--border-muted);
+  color: var(--text-muted);
+  font-size: 9px;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+}
+
+.agent-runtime-strip span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.agent-runtime-strip span.ready {
+  color: var(--accent-success);
 }
 
 .agent-panel-empty {
@@ -1068,5 +1140,90 @@ const visibleProgressEvents = computed(() => [...props.progressEvents].slice(-15
 .agent-progress-slide-leave-to {
   opacity: 0;
   transform: translateX(8px);
+}
+/* Ark moderate: one technical stage for live Pi state, not a decorative dashboard. */
+.agent-activity-panel {
+  min-height: 0;
+  overscroll-behavior: contain;
+  background-image:
+    linear-gradient(rgb(24 209 255 / 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(24 209 255 / 0.045) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.agent-panel-section-body {
+  max-height: 264px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.agent-panel-thinking-desc {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+.agent-activity-panel :deep(.tool-call-card) {
+  max-height: 220px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.agent-panel-section,
+.agent-activity-panel :deep(.tool-call-card) {
+  border-color: rgb(152 179 184 / 0.28);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.agent-panel-section-head {
+  border-inline-start: 2px solid transparent;
+}
+
+.status-thinking .agent-panel-section-head,
+.status-working .agent-panel-section-head {
+  border-inline-start-color: #18d1ff;
+}
+
+.agent-panel-section-title,
+.agent-panel-status-tag,
+.agent-panel-group-title {
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.agent-panel-tool-list {
+  display: grid;
+  gap: 8px;
+}
+
+.agent-panel-abort {
+  display: grid;
+  place-items: center;
+  inline-size: 28px;
+  block-size: 28px;
+  color: var(--accent-danger);
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.agent-panel-abort:hover {
+  color: #fff;
+  background: var(--accent-danger);
+}
+
+.agent-activity-panel :deep(.tool-call-status-badge),
+.agent-activity-panel :deep(.tool-call-icon-wrap) {
+  border-radius: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-activity-panel :deep(.agent-icon-spin),
+  .agent-activity-panel :deep(.agent-icon-pulse) {
+    animation: none;
+  }
 }
 </style>

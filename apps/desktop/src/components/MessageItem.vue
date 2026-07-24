@@ -1,29 +1,26 @@
 <script setup lang="ts">
-import { Copy, Check, Pencil, Bot, Clock } from '@lucide/vue'
+import { Activity, ArrowRight, Check, Clock, Copy, Download, FileText, Pencil, Bot } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import { UiButton } from '@/components/ui'
 import MarkdownRender from './MarkdownRender.vue'
-import ThinkingProcess from './chat/ThinkingProcess.vue'
-import ToolCallCard from './chat/ToolCallCard.vue'
-import type { MessageDto } from '../api'
-import type { ThinkingStep, ToolCall } from '@/composables/useAgentActivity'
+import type { MessageDto, PiArtifactDto } from '../api'
 
 const props = defineProps<{
   message: MessageDto
   index: number
-  thinkingSteps?: ThinkingStep[]
-  toolCalls?: ToolCall[]
-  agentLabel?: string | null
+  artifacts?: PiArtifactDto[]
+  streamingStatus?: string
 }>()
 
 const emit = defineEmits<{
-  approve: [approvalId: string]
-  reject: [approvalId: string]
+  'download-artifact': [artifact: PiArtifactDto]
+  'continue-artifact': [artifact: PiArtifactDto]
 }>()
 
 const copied = ref(false)
 const isEditing = ref(false)
 const editContent = ref('')
+const isStreaming = computed(() => props.message.id.startsWith('stream-'))
 
 function handleCopy() {
   navigator.clipboard.writeText(props.message.content)
@@ -41,7 +38,6 @@ function cancelEdit() {
 }
 
 function saveEdit() {
-  // TODO: emit edit event
   isEditing.value = false
 }
 
@@ -56,54 +52,63 @@ const timeLabel = computed(() => {
     return null
   }
 })
-
-const messageThinkingSteps = computed(() => props.thinkingSteps ?? [])
-const messageToolCalls = computed(() => props.toolCalls ?? [])
-const hasThinking = computed(() => messageThinkingSteps.value.length > 0)
-const hasToolCalls = computed(() => messageToolCalls.value.length > 0)
 </script>
 
 <template>
-  <article class="message-wrapper" :class="message.role">
-    <!-- AI 消息：Markdown 渲染，无头像无对话框 -->
+  <article class="message-wrapper" :class="[message.role, { streaming: isStreaming }]">
     <template v-if="message.role === 'assistant'">
       <div class="assistant-message-row">
         <div class="message-content assistant">
-          <!-- Agent 标签和时间戳 -->
-          <div v-if="agentLabel || timeLabel" class="assistant-meta-row">
+          <div v-if="timeLabel || isStreaming" class="assistant-meta-row">
             <div class="assistant-agent-tag">
               <Bot :size="10" />
-              <span>{{ agentLabel ?? '智能体' }}</span>
+              <span>Pi</span>
             </div>
-            <span v-if="timeLabel" class="assistant-time">
+            <span v-if="isStreaming" class="assistant-stream-tag">
+              <Activity :size="10" />
+              {{ streamingStatus || '正在等待模型输出。' }}
+            </span>
+            <span v-else-if="timeLabel" class="assistant-time">
               <Clock :size="9" />
               {{ timeLabel }}
             </span>
           </div>
 
-          <!-- 思考过程 -->
-          <ThinkingProcess v-if="hasThinking" :steps="messageThinkingSteps" />
-
-          <!-- 工具调用卡片 -->
-          <div v-if="hasToolCalls" class="assistant-tool-calls">
-            <ToolCallCard
-              v-for="call in messageToolCalls"
-              :key="call.id"
-              :tool-call="call"
-              @approve="emit('approve', $event)"
-              @reject="emit('reject', $event)"
-            />
+          <div v-if="isStreaming && !message.content" class="assistant-stream-placeholder">
+            <span /><span /><span />
           </div>
+          <MarkdownRender v-if="message.content" :content="message.content" />
 
-          <MarkdownRender :content="message.content" />
+          <div v-if="artifacts && artifacts.length > 0" class="message-artifacts">
+            <div v-for="artifact in artifacts" :key="artifact.id" class="message-artifact-row">
+              <span class="message-artifact-label">
+                <FileText :size="13" />
+                {{ artifact.kind === 'plan' ? '规划文件' : '规范文件' }}
+              </span>
+              <button
+                type="button"
+                class="message-artifact-action icon-only"
+                :title="`下载${artifact.kind === 'plan' ? '规划' : '规范'}文件`"
+                @click="emit('download-artifact', artifact)"
+              >
+                <Download :size="12" />
+              </button>
+              <button
+                type="button"
+                class="message-artifact-action"
+                @click="emit('continue-artifact', artifact)"
+              >
+                <span>{{ artifact.kind === 'spec' ? '继续规划' : '开始执行' }}</span>
+                <ArrowRight :size="12" />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </template>
 
-    <!-- 用户消息：对话框气泡 + 左侧操作按钮 -->
     <template v-else>
       <div class="user-message-row">
-        <!-- 左侧操作按钮 -->
         <div class="user-message-actions">
           <UiButton variant="ghost" size="icon" class="message-action-btn" :title="$t('chat.copy')" @click="handleCopy">
             <Check v-if="copied" :size="11" />
@@ -114,7 +119,6 @@ const hasToolCalls = computed(() => messageToolCalls.value.length > 0)
           </UiButton>
         </div>
 
-        <!-- 对话框气泡 -->
         <div class="message-content user">
           <template v-if="isEditing">
             <textarea v-model="editContent" class="edit-textarea" rows="3" />

@@ -63,6 +63,8 @@ import {
   type ModelRouteDto,
   type PromptContextPreviewDto,
   type PromptFragmentDto,
+  type PiModelDto,
+  type SessionDto,
   type SavePromptFragmentInput,
   type SaveModelProviderInstanceInput,
   type HarnessManifestDto,
@@ -118,6 +120,16 @@ interface DesktopAppConfig {
   gateway_url: string
   source: 'default' | 'user' | 'environment'
   managed: boolean
+}
+
+interface PiModelConfigSummary {
+  kind: 'custom'
+  provider: string
+  modelId: string
+  displayName: string
+  baseUrl: string
+  api: string
+  reasoning: boolean
 }
 
 interface ProviderForm {
@@ -240,9 +252,9 @@ const visiblePetCatalog = computed(() => matchingPetCatalog.value.slice(0, petCa
 const canLoadMorePets = computed(() => visiblePetCatalog.value.length < matchingPetCatalog.value.length)
 
 let petLoadMoreObserver: IntersectionObserver | null = null
-const stopPetChanged = window.tinadec.pets.onChanged((pet) => {
+const stopPetChanged = window.tinadec?.pets?.onChanged?.((pet) => {
   downloadedPets.value = downloadedPets.value.map((item) => item.slug === pet.slug ? { ...item, enabled: pet.enabled } : item)
-})
+}) ?? (() => {})
 
 function loadMorePets() {
   petCatalogLimit.value = Math.min(matchingPetCatalog.value.length, petCatalogLimit.value + PET_CATALOG_PAGE_SIZE)
@@ -372,6 +384,35 @@ async function checkAboutHealth() {
 }
 checkAboutHealth()
 const modelCenterOverview = ref<ModelCenterOverviewDto | null>(null)
+const piSessions = ref<SessionDto[]>([])
+const selectedPiSessionId = ref('')
+const piRuntimeModels = ref<PiModelDto[]>([])
+const piModelConfigs = ref<PiModelConfigSummary[]>([])
+const selectedPiModelKey = ref('')
+const piModelSelectionBusy = ref(false)
+const showPiModelModal = ref(false)
+const piEditingModel = ref<PiModelConfigSummary | null>(null)
+const piModelForm = reactive({
+  kind: 'builtin' as 'builtin' | 'custom',
+  provider: 'openai',
+  apiKey: '',
+  baseUrl: '',
+  modelId: '',
+  previousModelId: '',
+  displayName: '',
+  api: 'openai-completions',
+  reasoning: true
+})
+const piBuiltinProviders = [
+  { id: 'openai', name: 'OpenAI' },
+  { id: 'anthropic', name: 'Anthropic' },
+  { id: 'google', name: 'Google Gemini' },
+  { id: 'openrouter', name: 'OpenRouter' },
+  { id: 'deepseek', name: 'DeepSeek' },
+  { id: 'xai', name: 'xAI' },
+  { id: 'groq', name: 'Groq' },
+  { id: 'mistral', name: 'Mistral' }
+]
 const agentCenterOverview = ref<AgentCenterOverviewDto | null>(null)
 const providers = ref<ModelProviderInstanceDto[]>([])
 const modelReadiness = ref<ModelReadinessReceiptDto | null>(null)
@@ -394,12 +435,8 @@ const modelCenterSection = ref<ModelCenterSection>('suppliers')
 const agentRuntimeSelection = ref<AgentRuntimeSelectionKind>('inherit')
 const agentRuntimeProviderId = ref('')
 const agentRuntimeModelKey = ref('')
-const agentRuntimeCliId = ref('')
-const agentRuntimeAcpId = ref('')
 const agentRuntimeModelQuery = ref('')
 const agentRuntimeProviderQuery = ref('')
-const agentRuntimeCliQuery = ref('')
-const agentRuntimeAcpQuery = ref('')
 const agentEditTools = ref<string[]>([])
 const agentEditCapabilities = ref<string[]>([])
 const agentEditSystemPrompt = ref('')
@@ -479,6 +516,7 @@ const navItems = computed(() => [
 ])
 
 async function loadAppConfig() {
+  if (!window.tinadec?.getAppConfig) return
   appConfig.value = await window.tinadec.getAppConfig()
   gatewayUrlDraft.value = appConfig.value.gateway_url
 }
@@ -575,6 +613,16 @@ function clearGatewayRestartBanner() {
 
 void loadAppConfig()
 
+const piModelCatalog = computed<PiModelDto[]>(() =>
+  piRuntimeModels.value.length > 0
+    ? piRuntimeModels.value
+    : (modelCenterOverview.value?.models ?? []).map((model) => ({
+        provider: model.provider_instance_id.replace(/^pi:/, ''),
+        id: model.model_id,
+        name: model.display_name,
+      }))
+)
+
 const modelCenterSections = computed(() => [
   { key: 'suppliers' as const, label: t('settings.centerSuppliers'), count: modelCenterOverview.value?.suppliers.length ?? 0 },
   { key: 'api' as const, label: t('settings.centerApiConnections'), count: modelCenterOverview.value?.api_connections.length ?? 0 },
@@ -658,8 +706,6 @@ const runtimeBindingWritable = computed(() =>
 )
 const runtimeModels = computed(() => agentCenterOverview.value?.runtime_sources.models ?? modelCenterOverview.value?.models ?? [])
 const runtimeProviders = computed(() => agentCenterOverview.value?.runtime_sources.providers ?? modelCenterOverview.value?.api_connections ?? [])
-const runtimeCliOptions = computed(() => agentCenterOverview.value?.runtime_sources.cli_runtimes ?? modelCenterOverview.value?.cli_runtimes ?? [])
-const runtimeAcpOptions = computed(() => agentCenterOverview.value?.runtime_sources.acp_runtimes ?? modelCenterOverview.value?.acp_runtimes ?? [])
 const modelCenterDiagnostics = computed(() => modelCenterOverview.value?.diagnostics ?? [])
 const agentCenterDiagnostics = computed(() => agentCenterOverview.value?.diagnostics ?? [])
 const filteredRuntimeModels = computed(() => runtimeModels.value.filter((model) => runtimeQueryMatches(
@@ -679,25 +725,6 @@ const filteredRuntimeProviders = computed(() => runtimeProviders.value.filter((p
   provider.status,
   provider.model
 )))
-const filteredRuntimeCliOptions = computed(() => runtimeCliOptions.value.filter((runtime) => runtimeQueryMatches(
-  agentRuntimeCliQuery.value,
-  runtime.display_name,
-  runtime.runtime_id,
-  runtime.driver,
-  runtime.status,
-  runtime.binary_path,
-  runtime.home_path
-)))
-const filteredRuntimeAcpOptions = computed(() => runtimeAcpOptions.value.filter((runtime) => runtimeQueryMatches(
-  agentRuntimeAcpQuery.value,
-  runtime.display_name,
-  runtime.runtime_id,
-  runtime.source,
-  runtime.driver,
-  runtime.status,
-  runtime.command
-)))
-
 const selectedProvider = computed(() =>
   providers.value.find((provider) => provider.id === selectedProviderId.value) ?? null
 )
@@ -710,7 +737,7 @@ const selectedAgent = computed(() =>
 const configuringAgent = computed(() =>
   agents.value.find((agent) => agent.id === configuringAgentId.value) ?? null
 )
-const planningAgents = computed(() => agents.value.filter((agent) => agent.layer === 'planning'))
+const planningAgents = computed(() => agents.value.filter((agent) => agent.layer === 'operation' || agent.layer === 'planning'))
 const executionAgents = computed(() => agents.value.filter((agent) => agent.layer === 'execution'))
 const configuredAgentMode = computed(() => agentModes.value.find((mode) => mode.id === configuringAgent.value?.mode) ?? null)
 const manifestToolList = computed(() => manifestTools(harnessManifest.value, availableTools.value))
@@ -916,6 +943,189 @@ function closeModal() {
   showModal.value = false
 }
 
+function piModelKey(model: Pick<PiModelDto, 'provider' | 'id'>): string {
+  return `${model.provider ?? ''}\u0000${model.id ?? ''}`
+}
+
+function piModelLabel(model: PiModelDto): string {
+  return model.name || [model.provider, model.id].filter(Boolean).join('/')
+}
+
+async function loadPiSessionModelState() {
+  const sessionId = selectedPiSessionId.value
+  if (!sessionId) {
+    piRuntimeModels.value = []
+    selectedPiModelKey.value = ''
+    return
+  }
+
+  try {
+    const [models, state] = await Promise.all([
+      api.listPiModels(sessionId),
+      api.getPiState(sessionId),
+    ])
+    piRuntimeModels.value = models.filter((model) => model.id !== 'unknown')
+    const current = state.model
+    selectedPiModelKey.value = current && typeof current === 'object'
+      ? piModelKey(current as PiModelDto)
+      : ''
+  } catch (error) {
+    piRuntimeModels.value = []
+    selectedPiModelKey.value = ''
+    modelCenterError.value = error instanceof Error ? error.message : t('settings.centerLoadFailed')
+  }
+}
+
+async function loadPiSessions() {
+  try {
+    const projects = await api.listProjects()
+    piSessions.value = (await Promise.all(projects.map((project) => api.listSessions(project.id)))).flat()
+    const remembered = localStorage.getItem('tinadec-active-pi-session')
+    const next = piSessions.value.find((session) => session.id === selectedPiSessionId.value)
+      ?? piSessions.value.find((session) => session.id === remembered)
+      ?? piSessions.value[0]
+    selectedPiSessionId.value = next?.id ?? ''
+    await loadPiSessionModelState()
+  } catch (error) {
+    piSessions.value = []
+    selectedPiSessionId.value = ''
+    piRuntimeModels.value = []
+    modelCenterError.value = error instanceof Error ? error.message : t('settings.centerLoadFailed')
+  }
+}
+
+async function refreshPiModels() {
+  piModelSelectionBusy.value = true
+  modelCenterError.value = ''
+  try {
+    await api.refreshPiModels()
+    await Promise.all([
+      loadModelCenter(),
+      loadAgentCenter(),
+      loadPiModelConfigs(),
+      loadPiSessionModelState(),
+    ])
+    notify.success(t('settings.piModelsRefreshed'))
+  } catch (error) {
+    notify.error(error, { title: t('settings.refresh') })
+  } finally {
+    piModelSelectionBusy.value = false
+  }
+}
+
+function piModelConfigFor(model: PiModelDto): PiModelConfigSummary | null {
+  return piModelConfigs.value.find(
+    (config) => config.provider === model.provider && config.modelId === model.id,
+  ) ?? null
+}
+
+async function loadPiModelConfigs() {
+  if (!window.tinadec?.listPiModelConfigs) {
+    piModelConfigs.value = []
+    return
+  }
+  piModelConfigs.value = await window.tinadec.listPiModelConfigs()
+}
+
+function setPiModelKind(kind: 'builtin' | 'custom') {
+  if (piEditingModel.value) return
+  piModelForm.kind = kind
+  piModelForm.provider = kind === 'custom' ? 'custom-openai' : 'openai'
+}
+
+function openPiModelModal() {
+  piEditingModel.value = null
+  setPiModelKind('builtin')
+  piModelForm.apiKey = ''
+  piModelForm.baseUrl = ''
+  piModelForm.modelId = ''
+  piModelForm.previousModelId = ''
+  piModelForm.displayName = ''
+  piModelForm.api = 'openai-completions'
+  piModelForm.reasoning = true
+  showPiModelModal.value = true
+}
+
+function openPiModelEditor(config: PiModelConfigSummary) {
+  piEditingModel.value = config
+  piModelForm.kind = 'custom'
+  piModelForm.provider = config.provider
+  piModelForm.apiKey = ''
+  piModelForm.baseUrl = config.baseUrl
+  piModelForm.modelId = config.modelId
+  piModelForm.previousModelId = config.modelId
+  piModelForm.displayName = config.displayName
+  piModelForm.api = config.api
+  piModelForm.reasoning = config.reasoning
+  showPiModelModal.value = true
+}
+
+async function savePiModelConfig() {
+  piModelSelectionBusy.value = true
+  try {
+    const saved = await window.tinadec.savePiModel({
+      ...piModelForm,
+      update: piEditingModel.value !== null,
+    })
+    await api.refreshPiModels()
+    await Promise.all([
+      loadModelCenter(),
+      loadAgentCenter(),
+      loadPiModelConfigs(),
+      loadPiSessionModelState(),
+    ])
+    showPiModelModal.value = false
+    piModelForm.apiKey = ''
+    notify.success(saved.modelId ?? saved.provider)
+  } catch (error) {
+    notify.error(error, { title: t('settings.piModelsTitle') })
+  } finally {
+    piModelSelectionBusy.value = false
+  }
+}
+
+async function deletePiModelConfig(config: PiModelConfigSummary) {
+  if (!await confirm({
+    title: t('settings.delete'),
+    message: t('settings.piModelDeleteConfirm', { name: config.displayName || config.modelId }),
+    confirmLabel: t('settings.delete'),
+    cancelLabel: t('settings.cancel'),
+    destructive: true,
+  })) return
+  piModelSelectionBusy.value = true
+  try {
+    await window.tinadec.deletePiModel({ provider: config.provider, modelId: config.modelId })
+    await api.refreshPiModels()
+    await Promise.all([
+      loadModelCenter(),
+      loadAgentCenter(),
+      loadPiModelConfigs(),
+      loadPiSessionModelState(),
+    ])
+    notify.success(config.displayName || config.modelId)
+  } catch (error) {
+    notify.error(error, { title: t('settings.delete') })
+  } finally {
+    piModelSelectionBusy.value = false
+  }
+}
+
+async function selectPiModel(model: PiModelDto) {
+  const sessionId = selectedPiSessionId.value
+  if (!sessionId || !model.provider || !model.id) return
+  piModelSelectionBusy.value = true
+  try {
+    await api.selectPiModel(sessionId, model.provider, model.id)
+    selectedPiModelKey.value = piModelKey(model)
+    localStorage.setItem('tinadec-active-pi-session', sessionId)
+    notify.success(piModelLabel(model))
+  } catch (error) {
+    notify.error(error, { title: piModelLabel(model) })
+  } finally {
+    piModelSelectionBusy.value = false
+  }
+}
+
 async function loadModelCenter() {
   modelCenterLoading.value = true
   modelCenterError.value = ''
@@ -931,6 +1141,7 @@ async function loadModelCenter() {
     if (selected) {
       selectedProviderId.value = selected.id
     }
+    await Promise.all([loadPiSessions(), loadPiModelConfigs()])
   } catch (error) {
     modelCenterError.value = error instanceof Error ? error.message : t('settings.centerLoadFailed')
   } finally {
@@ -1285,12 +1496,8 @@ function openAgentConfig(agent: AgentProfileDto) {
     : runtimeModels.value[0]
       ? modelOptionKey(runtimeModels.value[0].provider_instance_id, runtimeModels.value[0].model_id)
       : ''
-  agentRuntimeCliId.value = binding?.runtime_kind === 'cli' ? binding.runtime_id ?? '' : runtimeCliOptions.value[0]?.runtime_id ?? ''
-  agentRuntimeAcpId.value = binding?.runtime_kind === 'acp' ? binding.runtime_id ?? '' : runtimeAcpOptions.value[0]?.runtime_id ?? ''
   agentRuntimeModelQuery.value = ''
   agentRuntimeProviderQuery.value = ''
-  agentRuntimeCliQuery.value = ''
-  agentRuntimeAcpQuery.value = ''
   nextTick(() => {
     if (!window.matchMedia('(max-width: 760px)').matches) return
     const panel = document.querySelector('.agent-detail-panel')
@@ -1315,13 +1522,6 @@ function runtimeBindingInput(): AgentRuntimeBindingInput | null {
       ? { selection_kind: 'provider_auto', provider_instance_id: agentRuntimeProviderId.value }
       : null
   }
-  if (agentRuntimeSelection.value === 'cli') {
-    return agentRuntimeCliId.value ? { selection_kind: 'cli', runtime_id: agentRuntimeCliId.value } : null
-  }
-  if (agentRuntimeSelection.value === 'acp') {
-    return agentRuntimeAcpId.value ? { selection_kind: 'acp', runtime_id: agentRuntimeAcpId.value } : null
-  }
-
   const selected = runtimeModels.value.find((model) =>
     modelOptionKey(model.provider_instance_id, model.model_id) === agentRuntimeModelKey.value
   )
@@ -1544,7 +1744,7 @@ import '../settings/settings.css'
 </script>
 
 <template>
-<div class="settings-page">
+<div class="settings-page" data-ark-theme="ark" data-ark-depth="moderate">
 <!-- Background Layer is now rendered globally in App.vue, outside the page transition -->
 
 <!-- Full-width draggable bar for window dragging -->
@@ -1652,7 +1852,138 @@ import '../settings/settings.css'
         </template>
 
         <template v-if="activeSection === 'model'">
-          <div class="center-page model-center-page">
+          <section class="pi-model-page" aria-labelledby="pi-models-title">
+            <header class="pi-model-header">
+              <div>
+                <p class="pi-model-kicker">PI / MODEL RUNTIME</p>
+                <h2 id="pi-models-title">{{ t('settings.piModelsTitle') }}</h2>
+                <p>{{ t('settings.piModelsSubtitle') }}</p>
+              </div>
+              <div class="pi-model-actions">
+                <UiButton size="sm" :disabled="piModelSelectionBusy" @click="openPiModelModal">
+                  <KeyRound :size="14" />
+                  {{ t('settings.piLogin') }}
+                </UiButton>
+                <UiButton variant="outline" size="sm" :disabled="piModelSelectionBusy || modelCenterLoading" @click="refreshPiModels">
+                  <RefreshCw :size="14" :class="{ spinning: piModelSelectionBusy || modelCenterLoading }" />
+                  {{ t('settings.refresh') }}
+                </UiButton>
+              </div>
+            </header>
+
+            <section class="pi-model-status-strip" :aria-label="t('settings.centerOverview')">
+              <div>
+                <span>AUTHENTICATED</span>
+                <strong>{{ piModelCatalog.length }}</strong>
+              </div>
+              <div>
+                <span>RUNTIME</span>
+                <strong>PI SDK</strong>
+              </div>
+              <div>
+                <span>CONFIGURATION</span>
+                <strong>{{ t('settings.piModelScope') }}</strong>
+              </div>
+            </section>
+
+            <div v-if="modelCenterError" class="center-message error">
+              <Info :size="16" />
+              <span>{{ modelCenterError }}</span>
+              <UiButton variant="outline" size="sm" @click="refreshPiModels">{{ t('settings.retry') }}</UiButton>
+            </div>
+
+            <div class="pi-model-workbench">
+              <section class="pi-model-catalog" :aria-label="t('settings.piModelCatalog')">
+                <div class="pi-model-section-head">
+                  <div>
+                    <span>{{ t('settings.piModelCatalog') }}</span>
+                    <strong>{{ t('settings.piModelsTitle') }}</strong>
+                  </div>
+                  <UiBadge :variant="piModelCatalog.length ? 'default' : 'secondary'">
+                    {{ piModelCatalog.length }}
+                  </UiBadge>
+                </div>
+
+                <div v-if="piModelCatalog.length" class="pi-model-list">
+                  <div
+                    v-for="model in piModelCatalog"
+                    :key="piModelKey(model)"
+                    class="pi-model-row"
+                    :class="{ active: selectedPiModelKey === piModelKey(model) }"
+                  >
+                    <button
+                      type="button"
+                      class="pi-model-select"
+                      :disabled="!selectedPiSessionId || piModelSelectionBusy"
+                      @click="selectPiModel(model)"
+                    >
+                      <Cpu :size="18" />
+                      <span>
+                        <strong>{{ piModelLabel(model) }}</strong>
+                        <small>{{ model.provider }}/{{ model.id }}</small>
+                      </span>
+                      <UiBadge :variant="selectedPiModelKey === piModelKey(model) ? 'default' : 'outline'">
+                        {{ selectedPiModelKey === piModelKey(model) ? t('settings.selected') : t('settings.available') }}
+                      </UiBadge>
+                    </button>
+                    <div v-if="piModelConfigFor(model)" class="pi-model-row-actions">
+                      <UiButton
+                        variant="ghost"
+                        size="icon"
+                        :title="t('settings.edit')"
+                        :disabled="piModelSelectionBusy"
+                        @click="openPiModelEditor(piModelConfigFor(model)!)"
+                      >
+                        <Edit3 :size="15" />
+                      </UiButton>
+                      <UiButton
+                        variant="ghost"
+                        size="icon"
+                        :title="t('settings.delete')"
+                        :disabled="piModelSelectionBusy"
+                        @click="deletePiModelConfig(piModelConfigFor(model)!)"
+                      >
+                        <Trash2 :size="15" />
+                      </UiButton>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="pi-model-empty">
+                  <KeyRound :size="20" />
+                  <strong>{{ t('settings.piModelsEmpty') }}</strong>
+                  <span>{{ t('settings.piModelsEmptyHint') }}</span>
+                  <UiButton size="sm" @click="openPiModelModal">
+                    <Plus :size="14" />
+                    {{ t('settings.piLogin') }}
+                  </UiButton>
+                </div>
+              </section>
+
+              <aside class="pi-model-session" :aria-label="t('settings.piModelSession')">
+                <div class="pi-model-section-head">
+                  <div>
+                    <span>{{ t('settings.piModelSession') }}</span>
+                    <strong>{{ t('settings.piModelSelection') }}</strong>
+                  </div>
+                  <Workflow :size="16" />
+                </div>
+                <label class="pi-model-session-picker">
+                  <span>{{ t('settings.piModelSession') }}</span>
+                  <select v-model="selectedPiSessionId" class="settings-select" @change="loadPiSessionModelState">
+                    <option value="" disabled>{{ t('settings.piModelNoSession') }}</option>
+                    <option v-for="session in piSessions" :key="session.id" :value="session.id">
+                      {{ session.title }}
+                    </option>
+                  </select>
+                </label>
+                <p v-if="!selectedPiSessionId" class="pi-model-session-empty">{{ t('settings.piModelNoSession') }}</p>
+                <p v-else class="pi-model-session-note">{{ t('settings.piModelSelectionHint') }}</p>
+              </aside>
+            </div>
+
+          </section>
+
+          <div v-if="modelCenterOverview?.capabilities.provider_crud" class="center-page model-center-page">
           <div class="center-command-bar">
             <div>
               <span class="center-kicker">{{ t('settings.model') }}</span>
@@ -1660,7 +1991,7 @@ import '../settings/settings.css'
               <p>{{ t('settings.modelCenterSubtitle') }}</p>
             </div>
             <div class="center-command-actions">
-              <UiButton variant="outline" size="sm" @click="focusModelProviderList('available')">
+              <UiButton v-if="modelCenterOverview?.capabilities.provider_crud" variant="outline" size="sm" @click="focusModelProviderList('available')">
                 <Plus :size="14" />
                 <span>{{ t('settings.addProvider') }}</span>
               </UiButton>
@@ -2393,7 +2724,7 @@ import '../settings/settings.css'
             <div v-if="configuringAgent" class="agent-detail-panel">
               <div class="agent-detail-head">
                 <div class="agent-card-icon" :class="{ execution: configuringAgent.layer === 'execution' }">
-                  <component :is="configuringAgent.layer === 'planning' ? Workflow : Cpu" :size="20" />
+                  <component :is="configuringAgent.layer === 'execution' ? Cpu : Workflow" :size="20" />
                 </div>
                 <div>
                   <h3>{{ agentTypeLabel(configuringAgent.agent_type) }}</h3>
@@ -2483,16 +2814,6 @@ import '../settings/settings.css'
                     <strong>{{ t('settings.runtimeProviderAuto') }}</strong>
                     <span>{{ t('settings.runtimeProviderAutoHint') }}</span>
                   </button>
-                  <button :class="{ active: agentRuntimeSelection === 'cli' }" :aria-pressed="agentRuntimeSelection === 'cli'" @click="agentRuntimeSelection = 'cli'">
-                    <Terminal :size="16" />
-                    <strong>CLI</strong>
-                    <span>{{ t('settings.runtimeCliHint') }}</span>
-                  </button>
-                  <button :class="{ active: agentRuntimeSelection === 'acp' }" :aria-pressed="agentRuntimeSelection === 'acp'" @click="agentRuntimeSelection = 'acp'">
-                    <Bot :size="16" />
-                    <strong>ACP</strong>
-                    <span>{{ t('settings.runtimeAcpHint') }}</span>
-                  </button>
                 </div>
 
                 <div v-if="agentRuntimeSelection === 'inherit'" class="runtime-source-current">
@@ -2527,42 +2848,6 @@ import '../settings/settings.css'
                   </select>
                   <p v-if="filteredRuntimeProviders.length === 0" class="agent-config-hint">{{ t('settings.noRuntimeMatches') }}</p>
                   <p class="agent-config-hint">{{ t('settings.providerAutoOwnedByCore') }}</p>
-                </div>
-                <div v-else-if="agentRuntimeSelection === 'cli'" class="settings-field runtime-source-picker">
-                  <UiLabel>CLI</UiLabel>
-                  <div class="runtime-source-search">
-                    <Search :size="14" />
-                    <UiInput v-model="agentRuntimeCliQuery" :placeholder="t('settings.runtimeSearchPlaceholder', { kind: 'CLI' })" />
-                  </div>
-                  <select v-model="agentRuntimeCliId" class="settings-select">
-                    <option value="" disabled>{{ t('settings.selectCliRuntime') }}</option>
-                    <option v-for="runtime in filteredRuntimeCliOptions" :key="runtime.runtime_id" :value="runtime.runtime_id">
-                      {{ runtime.display_name }} · {{ statusLabel(runtime.status) }}
-                    </option>
-                  </select>
-                  <p v-if="filteredRuntimeCliOptions.length === 0" class="agent-config-hint">{{ t('settings.noRuntimeMatches') }}</p>
-                </div>
-                <div v-else class="settings-field runtime-source-picker">
-                  <UiLabel>ACP</UiLabel>
-                  <div class="runtime-source-search">
-                    <Search :size="14" />
-                    <UiInput v-model="agentRuntimeAcpQuery" :placeholder="t('settings.runtimeSearchPlaceholder', { kind: 'ACP' })" />
-                  </div>
-                  <select v-model="agentRuntimeAcpId" class="settings-select">
-                    <option value="" disabled>{{ t('settings.selectAcpRuntime') }}</option>
-                    <option v-for="runtime in filteredRuntimeAcpOptions" :key="runtime.runtime_id" :value="runtime.runtime_id">
-                      {{ runtime.display_name }} · {{ acpRuntimeSourceLabel(runtime.source) }} · {{ statusLabel(runtime.status) }}
-                    </option>
-                  </select>
-                  <p v-if="filteredRuntimeAcpOptions.length === 0" class="agent-config-hint">{{ t('settings.noRuntimeMatches') }}</p>
-                </div>
-
-                <div v-if="!runtimeBindingWritable" class="runtime-binding-readonly">
-                  <Info :size="16" />
-                  <div>
-                    <strong>{{ t('settings.runtimeBindingPendingCore') }}</strong>
-                    <span>{{ t('settings.runtimeBindingPendingCoreHint') }}</span>
-                  </div>
                 </div>
                 <div class="modal-actions compact">
                   <UiButton :disabled="agentRuntimeBusy || !runtimeBindingWritable || !runtimeBindingInput()" size="sm" @click="saveAgentRuntimeBinding(configuringAgent)">
@@ -3786,6 +4071,105 @@ import '../settings/settings.css'
         </template>
       </UiCard>
     </div>
+    </Transition>
+
+    <Transition name="modal-fade">
+      <div v-if="showPiModelModal" class="pi-model-modal" @click.self="showPiModelModal = false">
+        <UiCard class="pi-model-modal-content">
+          <template #header>
+            <div class="modal-header-row">
+              <div class="modal-header-left">
+                <span class="modal-provider-logo pi-model-modal-icon"><Cpu :size="18" /></span>
+                <div class="modal-header-info">
+                  <h3>{{ piEditingModel ? t('settings.piEditTitle') : t('settings.piAddTitle') }}</h3>
+                  <span class="modal-header-sub">PI / ISOLATED RUNTIME</span>
+                </div>
+              </div>
+              <UiButton variant="ghost" size="icon" :title="t('settings.close')" @click="showPiModelModal = false">
+                <X :size="16" />
+              </UiButton>
+            </div>
+          </template>
+
+          <template #content>
+            <div v-if="!piEditingModel" class="pi-model-kind-select" role="group" :aria-label="t('settings.piAddTitle')">
+              <button type="button" :class="{ active: piModelForm.kind === 'builtin' }" @click="setPiModelKind('builtin')">
+                <KeyRound :size="16" />
+                <span>{{ t('settings.piBuiltinProvider') }}</span>
+              </button>
+              <button type="button" :class="{ active: piModelForm.kind === 'custom' }" @click="setPiModelKind('custom')">
+                <Server :size="16" />
+                <span>{{ t('settings.piCustomProvider') }}</span>
+              </button>
+            </div>
+
+            <div v-if="piModelForm.kind === 'builtin'" class="settings-field">
+              <UiLabel>{{ t('settings.piProvider') }}</UiLabel>
+              <select v-model="piModelForm.provider" class="settings-select">
+                <option v-for="provider in piBuiltinProviders" :key="provider.id" :value="provider.id">{{ provider.name }}</option>
+              </select>
+            </div>
+
+            <div v-else class="model-form-grid">
+              <div class="settings-field">
+                <UiLabel>{{ t('settings.piProviderId') }}</UiLabel>
+                <UiInput v-model="piModelForm.provider" placeholder="custom-openai" :disabled="Boolean(piEditingModel)" />
+              </div>
+              <div class="settings-field">
+                <UiLabel>{{ t('settings.displayName') }}</UiLabel>
+                <UiInput v-model="piModelForm.displayName" :placeholder="t('settings.piCustomProvider')" />
+              </div>
+              <div class="settings-field">
+                <UiLabel>{{ t('settings.baseUrl') }}</UiLabel>
+                <UiInput v-model="piModelForm.baseUrl" type="url" placeholder="https://api.example.com/v1" />
+              </div>
+              <div class="settings-field">
+                <UiLabel>{{ t('settings.modelLabel') }}</UiLabel>
+                <UiInput v-model="piModelForm.modelId" placeholder="model-id" />
+              </div>
+              <div class="settings-field">
+                <UiLabel>API</UiLabel>
+                <select v-model="piModelForm.api" class="settings-select">
+                  <option value="openai-completions">OpenAI Chat Completions</option>
+                  <option value="openai-responses">OpenAI Responses</option>
+                  <option value="anthropic-messages">Anthropic Messages</option>
+                  <option value="google-generative-ai">Google Generative AI</option>
+                </select>
+              </div>
+              <div class="settings-field pi-model-reasoning">
+                <div>
+                  <UiLabel>{{ t('settings.piReasoning') }}</UiLabel>
+                  <p>{{ t('settings.piReasoningHint') }}</p>
+                </div>
+                <UiSwitch v-model="piModelForm.reasoning" />
+              </div>
+            </div>
+
+            <div class="settings-field">
+              <UiLabel>{{ t('settings.apiKey') }}</UiLabel>
+              <UiInput
+                v-model="piModelForm.apiKey"
+                type="password"
+                autocomplete="new-password"
+                :placeholder="piEditingModel ? t('settings.piApiKeyRetainHint') : t('settings.piApiKeyHint')"
+              />
+            </div>
+          </template>
+
+          <template #footer>
+            <div class="modal-actions">
+              <UiButton variant="outline" @click="showPiModelModal = false">{{ t('settings.cancel') }}</UiButton>
+              <UiButton
+                :disabled="piModelSelectionBusy || (!piEditingModel && !piModelForm.apiKey.trim()) || (piModelForm.kind === 'custom' && (!piModelForm.provider.trim() || !piModelForm.baseUrl.trim() || !piModelForm.modelId.trim()))"
+                @click="savePiModelConfig"
+              >
+                <Save :size="14" />
+                <span>{{ piEditingModel ? t('settings.save') : t('settings.addProvider') }}</span>
+              </UiButton>
+            </div>
+          </template>
+        </UiCard>
+      </div>
     </Transition>
   </div>
 </template>

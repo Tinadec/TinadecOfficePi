@@ -12,14 +12,8 @@ import {
 	type CodeToolExecuteRequest,
 } from "./codeTools.js";
 import { coreUrl, proxyJson, proxySse } from "./coreClient.js";
-import { proxyDebugJson, debugWsUrl } from "./debugProxy.js";
+import { proxyDebugJson } from "./debugProxy.js";
 import { mcpRoutes } from "./mcp/mcpRoutes.js";
-import {
-	agentRuntimeBindingWriteResult,
-	loadAgentCenterOverview,
-	loadModelCenterOverview,
-	modelDiscoveryRefreshResult,
-} from "./modelAgentCenter.js";
 
 const port = Number(process.env.TINADEC_GATEWAY_PORT ?? 48730);
 
@@ -73,7 +67,7 @@ async function verifyCodeToolApproval(
 	}
 }
 
-const app = new Elysia({ adapter: node() })
+new Elysia({ adapter: node() })
 	// Manual CORS middleware – the @elysiajs/cors plugin returns 400 on
 	// OPTIONS preflight when used with the Node.js adapter.
 	.onRequest(({ request, set }) => {
@@ -232,6 +226,104 @@ const app = new Elysia({ adapter: node() })
 		setStatus(set, result.status);
 		return result.data;
 	})
+	.get("/api/v1/pi/models", async ({ set }) => {
+		const result = await proxyJson("/api/v1/pi/models");
+		setStatus(set, result.status);
+		return result.data;
+	})
+	.get("/api/v1/sessions/:sessionId/pi/models", async ({ params, set }) => {
+		const result = await proxyJson(
+			`/api/v1/sessions/${params.sessionId}/pi/models`,
+		);
+		setStatus(set, result.status);
+		return result.data;
+	})
+	.post("/api/v1/pi/models/refresh", async ({ set }) => {
+		const result = await proxyJson("/api/v1/pi/models/refresh", {
+			method: "POST",
+		});
+		setStatus(set, result.status);
+		return result.data;
+	})
+	.put(
+		"/api/v1/sessions/:sessionId/pi/model",
+		async ({ params, body, set }) => {
+			const result = await proxyJson(
+				`/api/v1/sessions/${params.sessionId}/pi/model`,
+				{ method: "PUT", body: body as Record<string, unknown> },
+			);
+			setStatus(set, result.status);
+			return result.data;
+		},
+	)
+	.put(
+		"/api/v1/sessions/:sessionId/pi/thinking-level",
+		async ({ params, body, set }) => {
+			const result = await proxyJson(
+				`/api/v1/sessions/${params.sessionId}/pi/thinking-level`,
+				{ method: "PUT", body: body as Record<string, unknown> },
+			);
+			setStatus(set, result.status);
+			return result.data;
+		},
+	)
+	.get(
+		"/api/v1/sessions/:sessionId/pi/runs",
+		async ({ params, query, set }) => {
+			const search = new URLSearchParams();
+			if (query.limit) search.set("limit", String(query.limit));
+			const suffix = search.toString() ? `?${search.toString()}` : "";
+			const result = await proxyJson(
+				`/api/v1/sessions/${params.sessionId}/pi/runs${suffix}`,
+			);
+			setStatus(set, result.status);
+			return result.data;
+		},
+	)
+	.get(
+		"/api/v1/sessions/:sessionId/pi/runs/:runId/agents",
+		async ({ params, set }) => {
+			const result = await proxyJson(
+				`/api/v1/sessions/${params.sessionId}/pi/runs/${params.runId}/agents`,
+			);
+			setStatus(set, result.status);
+			return result.data;
+		},
+	)
+	.get(
+		"/api/v1/sessions/:sessionId/pi/runs/:runId/artifacts",
+		async ({ params, set }) => {
+			const result = await proxyJson(
+				`/api/v1/sessions/${params.sessionId}/pi/runs/${params.runId}/artifacts`,
+			);
+			setStatus(set, result.status);
+			return result.data;
+		},
+	)
+	.get(
+		"/api/v1/sessions/:sessionId/pi/artifacts/:artifactId",
+		async ({ params, set }) => {
+			const result = await proxyJson(
+				`/api/v1/sessions/${params.sessionId}/pi/artifacts/${params.artifactId}`,
+			);
+			setStatus(set, result.status);
+			return result.data;
+		},
+	)
+	.get(
+		"/api/v1/sessions/:sessionId/pi/tool-executions",
+		async ({ params, query, set }) => {
+			const search = new URLSearchParams();
+			if (query.run_id) search.set("runId", String(query.run_id));
+			if (query.limit) search.set("limit", String(query.limit));
+			const suffix = search.toString() ? `?${search.toString()}` : "";
+			const result = await proxyJson(
+				`/api/v1/sessions/${params.sessionId}/pi/tool-executions${suffix}`,
+			);
+			setStatus(set, result.status);
+			return result.data;
+		},
+	)
 	.post(
 		"/api/v1/sessions/:sessionId/pi/steer",
 		async ({ params, body, set }) => {
@@ -503,14 +595,17 @@ const app = new Elysia({ adapter: node() })
 		return result;
 	})
 	.get("/api/v1/model-center/overview", async ({ set }) => {
-		const result = await loadModelCenterOverview();
+		const result = await proxyJson("/api/v1/model-center/overview");
 		setStatus(set, result.status);
 		return result.data;
 	})
 	.post(
 		"/api/v1/model-center/provider-instances/:providerInstanceId/models/refresh",
-		({ params, set }) => {
-			const result = modelDiscoveryRefreshResult(params.providerInstanceId);
+		async ({ params, set }) => {
+			const result = await proxyJson(
+				`/api/v1/model-center/provider-instances/${params.providerInstanceId}/models/refresh`,
+				{ method: "POST" },
+			);
 			setStatus(set, result.status);
 			return result.data;
 		},
@@ -711,7 +806,7 @@ const app = new Elysia({ adapter: node() })
 		return result.data;
 	})
 	.get("/api/v1/agent-center/overview", async ({ set }) => {
-		const result = await loadAgentCenterOverview();
+		const result = await proxyJson("/api/v1/agent-center/overview");
 		setStatus(set, result.status);
 		return result.data;
 	})
@@ -733,11 +828,17 @@ const app = new Elysia({ adapter: node() })
 		setStatus(set, result.status);
 		return result.data;
 	})
-	.put("/api/v1/agents/:agentId/runtime-binding", ({ params, body, set }) => {
-		const result = agentRuntimeBindingWriteResult(params.agentId, body);
-		setStatus(set, result.status);
-		return result.data;
-	})
+	.put(
+		"/api/v1/agents/:agentId/runtime-binding",
+		async ({ params, body, set }) => {
+			const result = await proxyJson(
+				`/api/v1/agents/${params.agentId}/runtime-binding`,
+				{ method: "PUT", body: body as Record<string, unknown> },
+			);
+			setStatus(set, result.status);
+			return result.data;
+		},
+	)
 	.put("/api/v1/agents/:agentId/mode", async ({ params, body, set }) => {
 		const result = await proxyJson(`/api/v1/agents/${params.agentId}/mode`, {
 			method: "PUT",

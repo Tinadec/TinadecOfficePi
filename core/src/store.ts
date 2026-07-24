@@ -24,9 +24,76 @@ export interface Session extends RecordValue {
 export interface Message extends RecordValue {
 	id: string;
 	session_id: string;
+	run_id?: string;
 	role: string;
 	content: string;
 	created_at: string;
+}
+
+export interface PiRun extends RecordValue {
+	id: string;
+	session_id: string;
+	user_message_id?: string;
+	assistant_message_id?: string;
+	mode: "space" | "plan" | "spec" | "ask" | "vibe" | "auto" | "agent" | "pair";
+	agent_profile_id: string;
+	config_version: number;
+	initial_context_revision: number;
+	status: "running" | "completed" | "failed" | "cancelled";
+	summary: string;
+	error?: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface PiArtifact extends RecordValue {
+	id: string;
+	run_id: string;
+	session_id: string;
+	kind: "plan" | "spec";
+	title: string;
+	path: string;
+	created_at: string;
+}
+
+export interface PiToolExecution extends RecordValue {
+	id: string;
+	run_id: string;
+	session_id: string;
+	tool_id: string;
+	tool_display_name: string;
+	source: "pi";
+	provider_layer: "pi-agent-sdk";
+	risk: "unknown";
+	requires_approval: boolean;
+	status: "running" | "completed" | "failed";
+	approval_id?: string | null;
+	step_result_id?: string | null;
+	summary: string;
+	evidence: string[];
+	requested_at: string;
+	updated_at: string;
+	duration_ms: number;
+	requested_seq: number;
+	updated_seq: number;
+	event_types: string[];
+	checkpoint_summary: string;
+}
+
+export interface PiAgentExecution extends RecordValue {
+	id: string;
+	run_id: string;
+	session_id: string;
+	agent_id: string;
+	agent_name: string;
+	agent_type: string;
+	agent_layer?: "operation" | "execution";
+	runtime_agent?: string;
+	direct_user_output?: boolean;
+	status: "pending" | "running" | "completed" | "failed" | "skipped";
+	task: string;
+	created_at: string;
+	updated_at: string;
 }
 
 export interface EventEnvelope extends RecordValue {
@@ -53,6 +120,10 @@ interface State {
 	prompt_versions: RecordValue[];
 	extension_sources: RecordValue[];
 	extensions: RecordValue[];
+	runs: PiRun[];
+	artifacts: PiArtifact[];
+	tool_executions: PiToolExecution[];
+	agent_executions: PiAgentExecution[];
 	events: EventEnvelope[];
 	sequence: number;
 }
@@ -69,6 +140,10 @@ const EMPTY_STATE: State = {
 	prompt_versions: [],
 	extension_sources: [],
 	extensions: [],
+	runs: [],
+	artifacts: [],
+	tool_executions: [],
+	agent_executions: [],
 	events: [],
 	sequence: 0,
 };
@@ -88,6 +163,14 @@ export class CoreStore {
 			this.state = {
 				...structuredClone(EMPTY_STATE),
 				...parsed,
+				runs: Array.isArray(parsed.runs) ? parsed.runs : [],
+				artifacts: Array.isArray(parsed.artifacts) ? parsed.artifacts : [],
+				tool_executions: Array.isArray(parsed.tool_executions)
+					? parsed.tool_executions
+					: [],
+				agent_executions: Array.isArray(parsed.agent_executions)
+					? parsed.agent_executions
+					: [],
 				events: Array.isArray(parsed.events) ? parsed.events : [],
 				sequence: typeof parsed.sequence === "number" ? parsed.sequence : 0,
 			};
@@ -167,10 +250,12 @@ export class CoreStore {
 		sessionId: string,
 		role: string,
 		content: string,
+		runId?: string,
 	): Promise<Message> {
 		const message: Message = {
 			id: id("message"),
 			session_id: sessionId,
+			...(runId ? { run_id: runId } : {}),
 			role,
 			content,
 			created_at: now(),
@@ -178,6 +263,147 @@ export class CoreStore {
 		this.state.messages.push(message);
 		await this.save();
 		return message;
+	}
+
+	async createRun(
+		sessionId: string,
+		mode: PiRun["mode"],
+		summary: string,
+		options: {
+			userMessageId?: string;
+			agentProfileId: string;
+			configVersion: number;
+			initialContextRevision: number;
+		} = {
+			agentProfileId: "space.full_duplex",
+			configVersion: 1,
+			initialContextRevision: 0,
+		},
+	): Promise<PiRun> {
+		const timestamp = now();
+		const run: PiRun = {
+			id: id("run"),
+			session_id: sessionId,
+			...(options.userMessageId
+				? { user_message_id: options.userMessageId }
+				: {}),
+			mode,
+			agent_profile_id: options.agentProfileId,
+			config_version: options.configVersion,
+			initial_context_revision: options.initialContextRevision,
+			status: "running",
+			summary,
+			created_at: timestamp,
+			updated_at: timestamp,
+		};
+		this.state.runs.push(run);
+		await this.save();
+		return run;
+	}
+
+	getRun(runId: string): PiRun | undefined {
+		return this.state.runs.find((run) => run.id === runId);
+	}
+
+	listRuns(sessionId: string, limit = 50): PiRun[] {
+		return this.state.runs
+			.filter((run) => run.session_id === sessionId)
+			.sort((left, right) => right.created_at.localeCompare(left.created_at))
+			.slice(0, limit);
+	}
+
+	async createArtifact(
+		input: Pick<
+			PiArtifact,
+			"run_id" | "session_id" | "kind" | "title" | "path"
+		>,
+	): Promise<PiArtifact> {
+		const artifact: PiArtifact = {
+			id: id("artifact"),
+			...input,
+			created_at: now(),
+		};
+		this.state.artifacts.push(artifact);
+		await this.save();
+		return artifact;
+	}
+
+	listArtifacts(sessionId: string, runId?: string): PiArtifact[] {
+		return this.state.artifacts.filter(
+			(artifact) =>
+				artifact.session_id === sessionId &&
+				(!runId || artifact.run_id === runId),
+		);
+	}
+
+	getArtifact(artifactId: string): PiArtifact | undefined {
+		return this.state.artifacts.find((artifact) => artifact.id === artifactId);
+	}
+
+	async updateRun(
+		runId: string,
+		patch: Partial<Pick<PiRun, "status" | "assistant_message_id" | "error">>,
+	): Promise<PiRun | undefined> {
+		const run = this.getRun(runId);
+		if (!run) return undefined;
+		Object.assign(run, patch, { updated_at: now() });
+		await this.save();
+		return run;
+	}
+
+	listToolExecutions(
+		sessionId: string,
+		runId?: string,
+		limit = 50,
+	): PiToolExecution[] {
+		return this.state.tool_executions
+			.filter(
+				(execution) =>
+					execution.session_id === sessionId &&
+					(!runId || execution.run_id === runId),
+			)
+			.sort((left, right) =>
+				right.requested_at.localeCompare(left.requested_at),
+			)
+			.slice(0, limit);
+	}
+
+	getToolExecution(idValue: string): PiToolExecution | undefined {
+		return this.state.tool_executions.find(
+			(execution) => execution.id === idValue,
+		);
+	}
+
+	async upsertToolExecution(
+		execution: PiToolExecution,
+	): Promise<PiToolExecution> {
+		const index = this.state.tool_executions.findIndex(
+			(item) => item.id === execution.id,
+		);
+		if (index >= 0) this.state.tool_executions[index] = execution;
+		else this.state.tool_executions.push(execution);
+		this.state.tool_executions = this.state.tool_executions.slice(-500);
+		await this.save();
+		return execution;
+	}
+
+	listAgentExecutions(runId: string): PiAgentExecution[] {
+		return this.state.agent_executions.filter(
+			(agent) => agent.run_id === runId,
+		);
+	}
+
+	async upsertAgentExecution(
+		agent: PiAgentExecution,
+	): Promise<PiAgentExecution> {
+		const index = this.state.agent_executions.findIndex(
+			(item) => item.id === agent.id,
+		);
+		if (index >= 0) this.state.agent_executions[index] = agent;
+		else this.state.agent_executions.push(agent);
+		this.state.agent_executions = this.state.agent_executions.slice(-100);
+		await this.save();
+		return agent;
 	}
 
 	listApprovals(sessionId?: string, status?: string): RecordValue[] {

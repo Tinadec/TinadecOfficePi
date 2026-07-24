@@ -6,7 +6,7 @@ const props = defineProps<{
   agent: AgentState
 }>()
 
-const isPlanning = computed(() => props.agent.agentLayer === 'planning')
+const isOperation = computed(() => props.agent.agentLayer === 'operation' || props.agent.agentLayer === 'planning')
 const isExecution = computed(() => props.agent.agentLayer === 'execution')
 
 const statusClass = computed(() => {
@@ -17,6 +17,8 @@ const statusClass = computed(() => {
       return 'agent-status-waiting'
     case 'completed':
       return 'agent-status-completed'
+    case 'skipped':
+      return 'agent-status-skipped'
     case 'error':
       return 'agent-status-error'
     default:
@@ -32,6 +34,8 @@ const statusLabel = computed(() => {
       return '等待中'
     case 'completed':
       return '已完成'
+    case 'skipped':
+      return '已跳过'
     case 'error':
       return '出错'
     default:
@@ -40,13 +44,13 @@ const statusLabel = computed(() => {
 })
 
 const layerClass = computed(() => {
-  if (isPlanning.value) return 'agent-layer-planning'
+  if (isOperation.value) return 'agent-layer-operation'
   if (isExecution.value) return 'agent-layer-execution'
   return 'agent-layer-other'
 })
 
 const layerLabel = computed(() => {
-  if (isPlanning.value) return '规划层'
+  if (isOperation.value) return '运营层'
   if (isExecution.value) return '执行层'
   return props.agent.agentLayer
 })
@@ -87,6 +91,10 @@ const layerLabel = computed(() => {
 
 .agent-status-indicator.agent-status-completed {
   border-color: rgba(63, 185, 80, 0.35);
+}
+
+.agent-status-indicator.agent-status-skipped {
+  opacity: 0.65;
 }
 
 .agent-status-indicator.agent-status-error {
@@ -158,9 +166,9 @@ const layerLabel = computed(() => {
   color: var(--text-secondary);
 }
 
-.agent-layer-planning .agent-status-layer-tag {
-  background: rgba(188, 140, 255, 0.12);
-  color: #bc8cff;
+.agent-layer-operation .agent-status-layer-tag {
+  background: rgba(24, 209, 255, 0.12);
+  color: var(--accent-primary);
 }
 
 .agent-layer-execution .agent-status-layer-tag {

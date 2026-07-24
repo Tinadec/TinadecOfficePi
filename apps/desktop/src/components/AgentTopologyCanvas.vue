@@ -21,7 +21,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const planningAgents = computed(() => props.agents.filter((agent) => agent.layer === 'planning'))
+const planningAgents = computed(() => props.agents.filter((agent) => agent.layer === 'operation' || agent.layer === 'planning'))
 const executionAgents = computed(() => props.agents.filter((agent) => agent.layer === 'execution'))
 
 function runtimeParts(agent: AgentProfileDto) {

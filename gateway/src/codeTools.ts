@@ -1136,6 +1136,7 @@ async function executeGitCommitViaToolLayer(
       paths: args.paths,
       include_all: args.include_all,
       commit_staged_only: args.commit_staged_only,
+      confirm_commit: args.confirm_commit,
       repository_path: '.'
     }, {
       approved: true,

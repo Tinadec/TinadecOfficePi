@@ -24,7 +24,7 @@ describe('settings centers presentation contract', () => {
     expect(settingsPage).toContain('?? providers.value[0] ?? null')
   })
 
-  it('preserves the agent inspector and runtime preview contract', () => {
+  it('preserves the writable agent inspector and runtime binding contract', () => {
     expect(settingsPage).toContain('class="center-page agent-center-page"')
     expect(settingsPage).toContain('class="center-workbench agent-workbench"')
     expect(settingsPage).toContain('class="center-inspector agent-inspector"')
@@ -42,7 +42,7 @@ describe('settings centers presentation contract', () => {
     expect(settingsPage).toContain("selectedAgentId.value = ''")
     expect(settingsPage).toContain("configuringAgentId.value = ''")
     expect(settingsPage).toContain("t('settings.pleaseOpenAgentConfig')")
-    expect(zhCn).toContain("pleaseOpenAgentConfig: '请打开智能体配置'")
+    expect(zhCn).toContain('pleaseOpenAgentConfig: "请打开智能体配置"')
   })
 
   it('keeps center states localized, compact, and accessible', () => {

@@ -156,7 +156,37 @@ export async function callToolLayer(
     instance = new ToolLayerProcess(resolvedWorkspace);
     instances.set(resolvedWorkspace, instance);
   }
-  return instance.call(toolId, params, options.approved === true, options.sessionId ?? 'gateway');
+  const approved = options.approved === true;
+  const sessionId = options.sessionId ?? 'gateway';
+  return instance.call(
+    toolId,
+    normalizeToolParams(params, approved, sessionId),
+    approved,
+    sessionId
+  );
+}
+
+const confirmationAliases: Record<string, string> = {
+  confirm_create_branch: 'confirm_branch_create',
+  confirm_delete_branch: 'confirm_branch_delete',
+  confirm_rename_branch: 'confirm_branch_rename',
+  confirm_create_worktree: 'confirm_worktree_create',
+  confirm_remove_worktree: 'confirm_worktree_remove'
+};
+
+function normalizeToolParams(
+  params: Record<string, unknown>,
+  approved: boolean,
+  sessionId: string
+): Record<string, unknown> {
+  const normalized = { ...params };
+  for (const [key, value] of Object.entries(params)) {
+    if (!key.startsWith('confirm_')) continue;
+    delete normalized[key];
+    if (!approved || (value !== true && (typeof value !== 'string' || !value.trim()))) continue;
+    normalized[confirmationAliases[key] ?? key] = value === true ? `gateway-approved:${sessionId}` : value;
+  }
+  return normalized;
 }
 
 function removeIfCurrent(workspace: string, instance: ToolLayerProcess): void {

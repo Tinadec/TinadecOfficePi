@@ -1,8 +1,16 @@
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { node } from "@elysiajs/node";
 import { Elysia } from "elysia";
-import { PiHarness } from "./harness.js";
+import { PiHarness, type PiRunConfig, type PiRunMode } from "./harness.js";
 import { CoreStore, defaultStatePath, id, now, stringOr } from "./store.js";
+import {
+	agentProfiles,
+	fullDuplexRunConfig,
+	resolvedRuntimeBinding,
+	saveProfile,
+	saveProfileMode,
+	saveRuntimeBinding,
+} from "./agentConfig.js";
 
 const port = Number(process.env.TINADEC_CORE_PORT ?? 48731);
 const store = new CoreStore(defaultStatePath());
@@ -35,6 +43,12 @@ new Elysia({ adapter: node() })
 				message: "pi-subagents is loaded as a Pi extension.",
 			},
 			{
+				name: "pi-observational-memory",
+				status: "ready",
+				message:
+					"Observational memory is loaded from the isolated Core installation.",
+			},
+			{
 				name: "models",
 				status: (await pi.availableModels()).length > 0 ? "ready" : "warning",
 				message: "Configure Pi authentication with pi /login or an API key.",
@@ -42,13 +56,14 @@ new Elysia({ adapter: node() })
 		],
 	}))
 	.get("/api/v1/readiness", async () => readiness(await pi.availableModels()))
+	.get("/api/v1/pi/models", async () => pi.availableModels())
 	.get("/api/v1/model-readiness", async () =>
 		modelReadiness(await pi.availableModels()),
 	)
 	.get("/api/v1/model-catalog-readiness", async () =>
 		modelCatalogReadiness(await pi.availableModels()),
 	)
-	.get("/api/v1/tool-layer-readiness", () => toolReadiness())
+	.get("/api/v1/tool-layer-readiness", () => toolReadiness(store))
 	.get("/api/v1/projects", () => store.listProjects())
 	.post("/api/v1/projects", async ({ body, set }) => {
 		const input = record(body);
@@ -118,15 +133,38 @@ new Elysia({ adapter: node() })
 				return fail(set, 400, "MESSAGE_EMPTY", "Message content is required.");
 			if (!store.getSession(params.sessionId))
 				return fail(set, 404, "SESSION_NOT_FOUND", "Session was not found.");
-			await store.addMessage(params.sessionId, "user", content);
+			const mode = piRunMode(record(body).mode);
+			let config: PiRunConfig;
+			try {
+				config = await runConfig(mode);
+			} catch (error) {
+				return fail(
+					set,
+					409,
+					"AGENT_CONFIGURATION_UNAVAILABLE",
+					safeError(error),
+				);
+			}
+			const userMessage = await store.addMessage(
+				params.sessionId,
+				"user",
+				content,
+			);
 			await store.publish(
 				"message.created",
 				params.sessionId,
-				{ role: "user" },
+				{ id: userMessage.id, role: "user" },
 				["agent.message"],
 			);
 			try {
-				const result = await pi.invoke(params.sessionId, content);
+				const result = await pi.invoke(
+					params.sessionId,
+					content,
+					undefined,
+					mode,
+					userMessage.id,
+					config,
+				);
 				return (
 					store
 						.listMessages(params.sessionId)
@@ -149,17 +187,40 @@ new Elysia({ adapter: node() })
 				return fail(set, 400, "MESSAGE_EMPTY", "Message content is required.");
 			if (!store.getSession(params.sessionId))
 				return fail(set, 404, "SESSION_NOT_FOUND", "Session was not found.");
-			await store.addMessage(params.sessionId, "user", content);
+			const mode = piRunMode(record(body).mode);
+			let config: PiRunConfig;
+			try {
+				config = await runConfig(mode);
+			} catch (error) {
+				return fail(
+					set,
+					409,
+					"AGENT_CONFIGURATION_UNAVAILABLE",
+					safeError(error),
+				);
+			}
+			const userMessage = await store.addMessage(
+				params.sessionId,
+				"user",
+				content,
+			);
 			await store.publish(
 				"message.created",
 				params.sessionId,
-				{ role: "user" },
+				{ id: userMessage.id, role: "user" },
 				["agent.message"],
 			);
 			set.headers["content-type"] = "text/event-stream";
 			set.headers["cache-control"] = "no-cache";
 			return sse(async (send) => {
-				await pi.invoke(params.sessionId, content, send);
+				await pi.invoke(
+					params.sessionId,
+					content,
+					send,
+					mode,
+					userMessage.id,
+					config,
+				);
 			});
 		},
 	)
@@ -172,6 +233,64 @@ new Elysia({ adapter: node() })
 			return fail(set, 502, "PI_SESSION_UNAVAILABLE", safeError(error));
 		}
 	})
+	.get("/api/v1/sessions/:sessionId/pi/models", async ({ params, set }) => {
+		if (!store.getSession(params.sessionId))
+			return fail(set, 404, "SESSION_NOT_FOUND", "Session was not found.");
+		return pi.availableModels();
+	})
+	.post("/api/v1/pi/models/refresh", async ({ set }) => {
+		try {
+			return await pi.reloadModels();
+		} catch (error) {
+			return fail(set, 409, "PI_MODEL_REFRESH_FAILED", safeError(error));
+		}
+	})
+	.put(
+		"/api/v1/sessions/:sessionId/pi/model",
+		async ({ params, body, set }) => {
+			if (!store.getSession(params.sessionId))
+				return fail(set, 404, "SESSION_NOT_FOUND", "Session was not found.");
+			const input = record(body);
+			const provider = stringValue(input.provider);
+			const modelId = stringValue(input.id);
+			if (!provider || !modelId)
+				return fail(
+					set,
+					400,
+					"PI_MODEL_INVALID",
+					"Provider and model id are required.",
+				);
+			try {
+				return await pi.setModel(params.sessionId, provider, modelId);
+			} catch (error) {
+				return fail(set, 409, "PI_MODEL_SELECTION_FAILED", safeError(error));
+			}
+		},
+	)
+	.put(
+		"/api/v1/sessions/:sessionId/pi/thinking-level",
+		async ({ params, body, set }) => {
+			if (!store.getSession(params.sessionId))
+				return fail(set, 404, "SESSION_NOT_FOUND", "Session was not found.");
+			const level = thinkingLevel(record(body).level);
+			if (!level)
+				return fail(
+					set,
+					400,
+					"PI_THINKING_LEVEL_INVALID",
+					"Choose a supported thinking level.",
+				);
+			try {
+				const selected = await pi.setThinkingLevel(params.sessionId, level);
+				return {
+					thinking_level: selected,
+					thinking_levels: await pi.thinkingLevels(params.sessionId),
+				};
+			} catch (error) {
+				return fail(set, 409, "PI_THINKING_LEVEL_FAILED", safeError(error));
+			}
+		},
+	)
 	.post("/api/v1/sessions/:sessionId/pi/steer", async ({ params, body, set }) =>
 		queuePi(set, record(body).content, (content) =>
 			pi.steer(params.sessionId, content),
@@ -185,19 +304,72 @@ new Elysia({ adapter: node() })
 			),
 	)
 	.post("/api/v1/sessions/:sessionId/pi/abort", async ({ params, set }) => {
+		if (!store.getSession(params.sessionId))
+			return fail(set, 404, "SESSION_NOT_FOUND", "Session was not found.");
 		try {
-			await pi.abort(params.sessionId);
-			return { status: "aborted" };
+			const aborted = await pi.abort(params.sessionId);
+			return { status: "aborted", ...aborted };
 		} catch (error) {
 			return fail(set, 409, "PI_ABORT_FAILED", safeError(error));
 		}
 	})
-	.get("/api/v1/sessions/:sessionId/orchestration", () => orchestration())
-	.get("/api/v1/sessions/:sessionId/runs", () => [])
+	.get("/api/v1/sessions/:sessionId/orchestration", ({ params }) =>
+		orchestration(store, params.sessionId),
+	)
+	.get("/api/v1/sessions/:sessionId/runs", ({ params, query }) =>
+		store.listRuns(params.sessionId, numberValue(query.limit, 50)),
+	)
+	.get("/api/v1/sessions/:sessionId/pi/runs", ({ params, query }) =>
+		store.listRuns(params.sessionId, numberValue(query.limit, 50)),
+	)
+	.get(
+		"/api/v1/sessions/:sessionId/pi/runs/:runId/agents",
+		({ params, set }) => {
+			const run = store.getRun(params.runId);
+			if (!run || run.session_id !== params.sessionId)
+				return fail(set, 404, "RUN_NOT_FOUND", "Run was not found.");
+			return store.listAgentExecutions(params.runId);
+		},
+	)
+	.get(
+		"/api/v1/sessions/:sessionId/pi/runs/:runId/artifacts",
+		({ params, set }) => {
+			const run = store.getRun(params.runId);
+			if (!run || run.session_id !== params.sessionId)
+				return fail(set, 404, "RUN_NOT_FOUND", "Run was not found.");
+			return store.listArtifacts(params.sessionId, params.runId);
+		},
+	)
+	.get(
+		"/api/v1/sessions/:sessionId/pi/artifacts/:artifactId",
+		async ({ params, set }) => {
+			const artifact = store.getArtifact(params.artifactId);
+			if (!artifact || artifact.session_id !== params.sessionId)
+				return fail(set, 404, "ARTIFACT_NOT_FOUND", "Artifact was not found.");
+			try {
+				return { ...artifact, content: await readFile(artifact.path, "utf8") };
+			} catch (error) {
+				return fail(set, 410, "ARTIFACT_UNAVAILABLE", safeError(error));
+			}
+		},
+	)
 	.get("/api/v1/sessions/:sessionId/task-nodes", () => [])
 	.get("/api/v1/sessions/:sessionId/context-packs", () => [])
 	.get("/api/v1/sessions/:sessionId/supervision-findings", () => [])
-	.get("/api/v1/sessions/:sessionId/tool-executions", () => [])
+	.get("/api/v1/sessions/:sessionId/tool-executions", ({ params, query }) =>
+		store.listToolExecutions(
+			params.sessionId,
+			stringValue(query.runId) ?? stringValue(query.run_id),
+			numberValue(query.limit, 50),
+		),
+	)
+	.get("/api/v1/sessions/:sessionId/pi/tool-executions", ({ params, query }) =>
+		store.listToolExecutions(
+			params.sessionId,
+			stringValue(query.runId) ?? stringValue(query.run_id),
+			numberValue(query.limit, 50),
+		),
+	)
 	.get("/api/v1/events", ({ query, request }) =>
 		eventStream(stringValue(query.sessionId), request.signal),
 	)
@@ -254,6 +426,12 @@ new Elysia({ adapter: node() })
 		set.status = 202;
 		return approval;
 	})
+	.get("/api/v1/model-center/overview", async () =>
+		modelCenterOverview(await pi.availableModels()),
+	)
+	.get("/api/v1/agent-center/overview", async () =>
+		agentCenterOverview(store, await pi.availableModels()),
+	)
 	.get("/api/v1/model-provider-templates", () => [piTemplate()])
 	.get("/api/v1/model-providers", async () =>
 		providers(await pi.availableModels()),
@@ -376,6 +554,26 @@ new Elysia({ adapter: node() })
 			installed_at: now(),
 			updated_at: now(),
 		},
+		{
+			id: "pi-observational-memory",
+			extension_id: "pi-observational-memory",
+			kind: "extension",
+			version: "3.0.3",
+			publisher: "elpapi42",
+			display_name: "Pi Observational Memory",
+			description:
+				"Tiered observations, reflections, recall, and prepared compaction.",
+			source_kind: "npm",
+			source_location: "node_modules/pi-observational-memory",
+			capabilities: ["observations", "reflections", "recall", "compaction"],
+			permissions: [],
+			enabled: true,
+			status: "ready",
+			status_message:
+				"Loaded by TinadecPi from the isolated Core installation.",
+			installed_at: now(),
+			updated_at: now(),
+		},
 	])
 	.post("/api/v1/extensions/:extensionId/enable", ({ params, set }) =>
 		extensionStatus(params.extensionId, set),
@@ -414,31 +612,38 @@ new Elysia({ adapter: node() })
 		),
 	)
 	.get("/api/v1/agent-modes", () => agentModes())
-	.get("/api/v1/agents", () => agents())
-	.put("/api/v1/agents/:agentId", ({ set }) =>
-		fail(
-			set,
-			501,
-			"PI_AGENT_CONFIGURATION_REQUIRED",
-			"Configure agents through project .pi/agents files or Pi settings.",
-		),
+	.get("/api/v1/agents", () => agentProfiles(store))
+	.put("/api/v1/agents/:agentId", async ({ params, body, set }) => {
+		const updated = await saveProfile(store, params.agentId, record(body));
+		return updated ?? fail(set, 404, "AGENT_NOT_FOUND", "Agent was not found.");
+	})
+	.put(
+		"/api/v1/agents/:agentId/runtime-binding",
+		async ({ params, body, set }) => {
+			try {
+				const models = await pi.availableModels();
+				const updated = await saveRuntimeBinding(
+					store,
+					params.agentId,
+					record(body),
+					models,
+				);
+				return updated
+					? resolvedRuntimeBinding(updated, models)
+					: fail(set, 404, "AGENT_NOT_FOUND", "Agent was not found.");
+			} catch (error) {
+				return fail(set, 409, "AGENT_RUNTIME_INVALID", safeError(error));
+			}
+		},
 	)
-	.put("/api/v1/agents/:agentId/runtime-binding", ({ set }) =>
-		fail(
-			set,
-			501,
-			"PI_AGENT_CONFIGURATION_REQUIRED",
-			"Pi resolves agent models through its own configuration.",
-		),
-	)
-	.put("/api/v1/agents/:agentId/mode", ({ set }) =>
-		fail(
-			set,
-			501,
-			"PI_AGENT_CONFIGURATION_REQUIRED",
-			"Agent mode is configured by Pi agent definitions.",
-		),
-	)
+	.put("/api/v1/agents/:agentId/mode", async ({ params, body, set }) => {
+		const updated = await saveProfileMode(
+			store,
+			params.agentId,
+			stringValue(record(body).mode),
+		);
+		return updated ?? fail(set, 404, "AGENT_NOT_FOUND", "Agent was not found.");
+	})
 	.get("/api/v1/agent-candidates", () => [])
 	.get("/api/v1/agent-evolution/proposals", () => [])
 	.post("/api/v1/agent-evolution/generate", () => [])
@@ -577,6 +782,14 @@ function readiness(models: unknown[]) {
 				evidence: ["pi-subagents"],
 			},
 			{
+				id: "pi-observational-memory",
+				name: "Pi Observational Memory",
+				status: "ready",
+				summary:
+					"Observations, reflections, recall, and prepared compaction are loaded.",
+				evidence: ["pi-observational-memory@3.0.3"],
+			},
+			{
 				id: "models",
 				name: "Pi models",
 				status: ready ? "ready" : "warning",
@@ -586,7 +799,7 @@ function readiness(models: unknown[]) {
 				evidence: ["pi /login or API key"],
 			},
 		],
-		ready_count: ready ? 3 : 2,
+		ready_count: ready ? 4 : 3,
 		warning_count: ready ? 0 : 1,
 		blocked_count: 0,
 	};
@@ -627,6 +840,123 @@ function modelReadiness(
 	};
 }
 
+function modelCenterOverview(
+	models: Array<{ provider?: string; id?: string; name?: string }>,
+) {
+	const timestamp = now();
+	const connections = models.map((model) => {
+		const provider = model.provider ?? "pi";
+		const modelId = model.id ?? "unknown";
+		return {
+			id: `pi:${provider}:${modelId}`,
+			provider_instance_id: `pi:${provider}`,
+			provider_family: "pi",
+			driver: "pi",
+			display_name: model.name ?? modelId,
+			connection_kind: "pi",
+			transport_kind: "pi",
+			credential_kind: "pi-managed",
+			base_url: null,
+			model: modelId,
+			has_api_key: true,
+			server_url: null,
+			capabilities: ["agent", "tools", "streaming", "subagents"],
+			enabled: true,
+			status: "ready",
+			status_message: "Resolved by Pi ModelRuntime.",
+			cooldown_until: null,
+			created_at: timestamp,
+			updated_at: timestamp,
+			route_purposes: [],
+			readiness: null,
+		};
+	});
+	return {
+		capabilities: {
+			provider_crud: false,
+			model_catalog_mode: "configured_only",
+			model_discovery_refresh: false,
+			live_model_discovery: true,
+			agent_runtime_binding_write: true,
+			acp_adapter_read: false,
+			acp_probe: false,
+		},
+		suppliers: [
+			{
+				supplier_id: "pi",
+				provider_family: "pi",
+				driver: "pi",
+				display_name: "Pi Agent Runtime",
+				connection_kind: "pi",
+				transport_kind: "pi",
+				credential_kind: "pi-managed",
+				summary: "Models are resolved from the isolated Pi runtime.",
+				contributor_description:
+					"Configure credentials with Pi, never through TinadecPi HTTP.",
+				default_base_url: null,
+				default_model: null,
+				default_timeout_seconds: 0,
+				capabilities: piTemplate().capabilities,
+			},
+		],
+		api_connections: connections,
+		models: connections.map((connection) => ({
+			id: connection.id,
+			display_name: connection.display_name,
+			provider_instance_id: connection.provider_instance_id,
+			provider_display_name: connection.display_name,
+			model_id: connection.model,
+			source: "configured_only",
+			configuration_sources: ["provider_default"],
+			is_provider_default: true,
+			route_purposes: [],
+			enabled: true,
+			status: "ready",
+		})),
+		cli_runtimes: [],
+		acp_runtimes: [],
+		readiness: {
+			model: modelReadiness(models),
+			catalog: modelCatalogReadiness(models),
+		},
+		diagnostics: models.length
+			? []
+			: [
+					{
+						code: "PI_MODEL_AUTH_REQUIRED",
+						severity: "warning",
+						message:
+							"No authenticated model is available in the isolated Pi runtime.",
+						source: "pi",
+					},
+				],
+	};
+}
+
+function agentCenterOverview(
+	store: CoreStore,
+	models: Array<{ provider?: string; id?: string; name?: string }>,
+) {
+	const modelCenter = modelCenterOverview(models);
+	return {
+		capabilities: modelCenter.capabilities,
+		agents: agentProfiles(store).map((agent) => ({
+			...agent,
+			runtime_binding: resolvedRuntimeBinding(agent, models),
+		})),
+		modes: agentModes(),
+		candidates: [],
+		runtime_sources: {
+			models: modelCenter.models,
+			providers: modelCenter.api_connections,
+			cli_runtimes: [],
+			acp_runtimes: [],
+		},
+		readiness: modelCenter.readiness,
+		diagnostics: modelCenter.diagnostics,
+	};
+}
+
 function modelCatalogReadiness(models: unknown[]) {
 	return {
 		status: models.length ? "ready" : "warning",
@@ -660,8 +990,9 @@ function modelCatalogReadiness(models: unknown[]) {
 	};
 }
 
-function toolReadiness() {
+function toolReadiness(store: CoreStore) {
 	const descriptors = tools();
+	const configuredAgents = agentProfiles(store);
 	return {
 		status: "ready",
 		generated_at: now(),
@@ -671,8 +1002,8 @@ function toolReadiness() {
 		ready_tool_count: descriptors.length,
 		warning_tool_count: 0,
 		blocked_tool_count: 0,
-		execution_agent_count: 3,
-		ready_agent_count: 3,
+		execution_agent_count: configuredAgents.length,
+		ready_agent_count: configuredAgents.length,
 		warning_agent_count: 0,
 		blocked_agent_count: 0,
 		approval_gated_tool_count: 0,
@@ -689,11 +1020,11 @@ function toolReadiness() {
 			requires_approval: false,
 			requires_human_checkpoint: false,
 			is_future: false,
-			assigned_execution_agent_count: 3,
+			assigned_execution_agent_count: configuredAgents.length,
 			summary: "Pi built-in tool.",
 			evidence: ["Pi SDK"],
 		})),
-		agent_scopes: agents().map((agent) => ({
+		agent_scopes: configuredAgents.map((agent) => ({
 			agent_id: agent.id,
 			agent_name: agent.name,
 			layer: agent.layer,
@@ -763,56 +1094,6 @@ function providers(
 		created_at: now(),
 		updated_at: now(),
 	}));
-}
-
-function agents() {
-	return [
-		{
-			id: "pi-planner",
-			name: "Planner",
-			layer: "planning",
-			agent_type: "planner",
-			mode: "parallel",
-			description: "Pi subagent planning role.",
-			model_route_purpose: "pi",
-			allowed_tools: ["read", "grep", "find", "ls"],
-			capabilities: ["subagent"],
-			system_prompt: null,
-			enabled: true,
-			is_built_in: true,
-			updated_at: now(),
-		},
-		{
-			id: "pi-worker",
-			name: "Worker",
-			layer: "execution",
-			agent_type: "worker",
-			mode: "parallel",
-			description: "Pi subagent implementation role.",
-			model_route_purpose: "pi",
-			allowed_tools: ["read", "bash", "edit", "write"],
-			capabilities: ["subagent"],
-			system_prompt: null,
-			enabled: true,
-			is_built_in: true,
-			updated_at: now(),
-		},
-		{
-			id: "pi-reviewer",
-			name: "Reviewer",
-			layer: "planning",
-			agent_type: "reviewer",
-			mode: "parallel",
-			description: "Pi subagent review role.",
-			model_route_purpose: "pi",
-			allowed_tools: ["read", "grep", "find", "ls"],
-			capabilities: ["subagent"],
-			system_prompt: null,
-			enabled: true,
-			is_built_in: true,
-			updated_at: now(),
-		},
-	];
 }
 
 function agentModes() {
@@ -899,15 +1180,22 @@ function harnessManifest() {
 		},
 		agent_layers: [
 			{
-				layer: "planning",
-				role: "plan and review",
-				agent_count: 2,
-				enabled_agent_count: 2,
+				layer: "operation",
+				role: "meeting, planning, supervision, memory, skills, and evolution",
+				agent_count: 6,
+				enabled_agent_count: 6,
 				max_parallel_executors: 4,
 				worktree_isolation: true,
 				approval_required: false,
-				agent_types: ["planner", "reviewer"],
-				tool_ids: ["read", "grep", "find", "ls"],
+				agent_types: [
+					"meeting",
+					"context_compressor",
+					"skill_recommender",
+					"supervisor",
+					"evolution",
+					"task_planner",
+				],
+				tool_ids: ["read", "grep", "find", "ls", "subagent"],
 			},
 			{
 				layer: "execution",
@@ -957,27 +1245,73 @@ function harnessManifest() {
 	};
 }
 
-function orchestration() {
+function orchestration(store: CoreStore, sessionId: string) {
+	const run = store.listRuns(sessionId, 1)[0] ?? null;
+	const assignments = run
+		? store.listAgentExecutions(run.id).map((agent) => ({
+				id: agent.id,
+				run_id: agent.run_id,
+				task_node_id: agent.id,
+				agent_id: agent.agent_id,
+				agent_name: agent.agent_name,
+				agent_layer: agent.agent_layer ?? "execution",
+				agent_type: agent.agent_type,
+				model_route_purpose: "pi",
+				permission_mode: "read-only",
+				allowed_tools: [],
+				status: agent.status,
+				created_at: agent.created_at,
+			}))
+		: [];
 	return {
-		run: null,
+		run,
 		graph: null,
 		nodes: [],
-		assignments: [],
+		assignments,
 		step_results: [],
 		context_packs: [],
 		supervision_findings: [],
 	};
 }
 
+async function runConfig(mode: PiRunMode): Promise<PiRunConfig> {
+	return fullDuplexRunConfig(store, await pi.availableModels(), mode);
+}
+
+function piRunMode(value: unknown): PiRunMode {
+	return [
+		"space",
+		"plan",
+		"spec",
+		"ask",
+		"vibe",
+		"auto",
+		"agent",
+		"pair",
+	].includes(String(value))
+		? (value as PiRunMode)
+		: "auto";
+}
+
+function thinkingLevel(
+	value: unknown,
+): "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null {
+	return ["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(
+		String(value),
+	)
+		? (value as "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max")
+		: null;
+}
+
 function extensionStatus(
 	extensionId: string,
 	set: { status?: number | string },
 ) {
-	if (extensionId !== "pi-subagents")
+	if (!["pi-subagents", "pi-observational-memory"].includes(extensionId))
 		return fail(set, 404, "EXTENSION_NOT_FOUND", "Extension was not found.");
 	return {
-		id: "pi-subagents",
-		extension_id: "pi-subagents",
+		id: extensionId,
+		extension_id: extensionId,
 		enabled: true,
 		status: "ready",
 		status_message: "Managed by the TinadecPi installation.",

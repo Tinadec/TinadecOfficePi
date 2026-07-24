@@ -2,7 +2,9 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import {
   ArrowUp,
+  BrainCircuit,
   ChevronDown,
+  Cpu,
   FolderOpen,
   FolderPlus,
   Image,
@@ -15,7 +17,7 @@ import {
 } from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import type { ProjectDto } from '../api'
+import type { PiModelDto, PiThinkingLevel, ProjectDto } from '../api'
 import { UiButton, UiDropdownMenu, UiScrollArea } from '@/components/ui'
 import ModeSelector from './ModeSelector.vue'
 import PermissionSelector from './PermissionSelector.vue'
@@ -28,6 +30,12 @@ const props = defineProps<{
   projects: ProjectDto[]
   selectedProjectId: string | null
   modelName: string
+  models: PiModelDto[]
+  runtimeReady: boolean
+  thinkingLevel: PiThinkingLevel
+  thinkingLevels: PiThinkingLevel[]
+  mode: AgentMode
+  permission: PermissionLevel
   busy: boolean
   panelStyle?: Record<string, string>
   panelDataAttrs?: Record<string, string>
@@ -41,16 +49,19 @@ const emit = defineEmits<{
   'add-file': []
   'update:mode': [value: AgentMode]
   'update:permission': [value: PermissionLevel]
+  'select-model': [model: PiModelDto]
+  'update:thinkingLevel': [level: PiThinkingLevel]
 }>()
 
 const draft = ref('')
 const showPlusMenu = ref(false)
 const showProjectDropdown = ref(false)
+const showModelMenu = ref(false)
+const showThinkingMenu = ref(false)
 const isChatMode = ref(false)
-const currentMode = ref<AgentMode>('auto')
-const currentPermission = ref<PermissionLevel>('default')
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 const projectTriggerRef = ref<HTMLElement | null>(null)
+const projectDropdownRef = ref<HTMLElement | null>(null)
 const dropdownStyle = ref<Record<string, string>>({})
 
 const selectedProject = computed(() =>
@@ -60,6 +71,7 @@ const selectedProject = computed(() =>
 const titleText = computed(() =>
   isChatMode.value ? t('chat.chatWithTinadec') : t('chat.startProject')
 )
+const thinkingLabel = computed(() => t(`thinking.${props.thinkingLevel}`))
 
 function handleSend() {
   const content = draft.value.trim()
@@ -97,11 +109,22 @@ function updateDropdownPosition() {
   const trigger = projectTriggerRef.value
   if (!trigger) return
   const rect = trigger.getBoundingClientRect()
+  const margin = 8
+  const width = Math.max(rect.width, 220)
+  const menuHeight = Math.min(projectDropdownRef.value?.offsetHeight ?? 260, 360)
+  const spaceAbove = rect.top - margin
+  const spaceBelow = window.innerHeight - rect.bottom - margin
+  const above = spaceAbove >= menuHeight || spaceAbove > spaceBelow
+  const maxHeight = Math.max(96, Math.min(menuHeight, above ? spaceAbove : spaceBelow))
   dropdownStyle.value = {
     position: 'fixed',
-    top: `${rect.bottom + 6}px`,
-    left: `${rect.left}px`,
-    minWidth: `${Math.max(rect.width, 220)}px`,
+    top: `${above
+      ? Math.max(margin, rect.top - maxHeight - 6)
+      : Math.min(window.innerHeight - margin - maxHeight, rect.bottom + 6)}px`,
+    left: `${Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin))}px`,
+    minWidth: `${width}px`,
+    maxHeight: `${maxHeight}px`,
+    overflowY: 'auto',
   }
 }
 
@@ -124,12 +147,10 @@ function openNewProject() {
 }
 
 function handleModeChange(mode: AgentMode) {
-  currentMode.value = mode
   emit('update:mode', mode)
 }
 
 function handlePermissionChange(perm: PermissionLevel) {
-  currentPermission.value = perm
   emit('update:permission', perm)
 }
 
@@ -143,8 +164,20 @@ function handleClickOutside(event: MouseEvent) {
   }
 }
 
-onMounted(() => document.addEventListener('click', handleClickOutside))
-onUnmounted(() => document.removeEventListener('click', handleClickOutside))
+function handleViewportChange() {
+  if (showProjectDropdown.value) updateDropdownPosition()
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+  window.addEventListener('resize', handleViewportChange)
+  window.addEventListener('scroll', handleViewportChange, true)
+})
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside)
+  window.removeEventListener('resize', handleViewportChange)
+  window.removeEventListener('scroll', handleViewportChange, true)
+})
 </script>
 
 <template>
@@ -200,7 +233,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
             variant="ghost"
             size="icon"
             class="welcome-dialog-send"
-            :disabled="!draft.trim()"
+            :disabled="!draft.trim() || !runtimeReady"
             @click="handleSend"
           >
             <ArrowUp :size="15" />
@@ -209,12 +242,52 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
 
         <div class="welcome-dialog-toolbar">
           <div class="toolbar-left">
+            <UiDropdownMenu v-model:open="showModelMenu" placement="top" class="composer-model-menu">
+              <template #trigger>
+                <button class="composer-model-trigger" type="button">
+                  <Cpu :size="12" />
+                  <span>{{ modelName || t('settings.noModel') }}</span>
+                  <ChevronDown :size="11" />
+                </button>
+              </template>
+              <template v-if="models.length > 0">
+                <button
+                  v-for="model in models"
+                  :key="`${model.provider}/${model.id}`"
+                  class="plus-menu-item"
+                  @click="emit('select-model', model); showModelMenu = false"
+                >
+                  <Cpu :size="12" />
+                  <span>{{ model.name || `${model.provider}/${model.id}` }}</span>
+                </button>
+              </template>
+              <span v-else class="plus-menu-item composer-model-empty">{{ t('settings.noConfiguredModels') }}</span>
+            </UiDropdownMenu>
+            <UiDropdownMenu v-model:open="showThinkingMenu" placement="top" class="composer-thinking-menu">
+              <template #trigger>
+                <button class="composer-model-trigger" type="button">
+                  <BrainCircuit :size="12" />
+                  <span>{{ thinkingLabel }}</span>
+                  <ChevronDown :size="11" />
+                </button>
+              </template>
+              <button
+                v-for="level in thinkingLevels"
+                :key="level"
+                class="plus-menu-item"
+                :class="{ active: level === thinkingLevel }"
+                @click="emit('update:thinkingLevel', level); showThinkingMenu = false"
+              >
+                <BrainCircuit :size="12" />
+                <span>{{ t(`thinking.${level}`) }}</span>
+              </button>
+            </UiDropdownMenu>
             <ModeSelector
-              :model-value="currentMode"
+              :model-value="mode"
               @update:model-value="handleModeChange"
             />
             <PermissionSelector
-              :model-value="currentPermission"
+              :model-value="permission"
               @update:model-value="handlePermissionChange"
             />
             <button
@@ -242,6 +315,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
     <Teleport to="body">
       <div
         v-if="showProjectDropdown"
+        ref="projectDropdownRef"
         class="project-dropdown-portal"
         :style="dropdownStyle"
       >

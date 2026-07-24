@@ -2,13 +2,13 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { api, type ApprovalDto, type DoctorReportDto, type EventEnvelope, type MessageDto, type ModelSettingsDto, type OrchestrationSnapshotDto, type ProjectDto, type RuntimeReadinessReceiptDto, type SessionDto, type ToolExecutionTimelineItemDto } from '../api'
+import { api, type ApprovalDto, type DoctorReportDto, type EventEnvelope, type MessageDto, type OrchestrationSnapshotDto, type PiArtifactDto, type PiModelDto, type PiSessionStateDto, type PiThinkingLevel, type ProjectDto, type RuntimeReadinessReceiptDto, type SessionDto, type ToolExecutionTimelineItemDto } from '../api'
 import { basenameFromPath } from '../format'
 import AppSidebar from '../components/AppSidebar.vue'
 import AppHeader from '../components/AppHeader.vue'
 import ChatPanel from '../components/ChatPanel.vue'
 import ContextPanel from '../components/ContextPanel.vue'
-import { useAgentActivity, type ThinkingStep, type ToolCall } from '@/composables/useAgentActivity'
+import { useAgentActivity } from '@/composables/useAgentActivity'
 import { useBackground } from '@/composables/useBackground'
 import { usePanelStyles } from '@/composables/usePanelStyles'
 import { useNotifications } from '@/composables/useNotifications'
@@ -29,22 +29,24 @@ const approvals = ref<ApprovalDto[]>([])
 const events = ref<EventEnvelope[]>([])
 const doctor = ref<DoctorReportDto | null>(null)
 const readiness = ref<RuntimeReadinessReceiptDto | null>(null)
-const modelSettings = ref<ModelSettingsDto | null>(null)
 const orchestration = ref<OrchestrationSnapshotDto | null>(null)
+const piModels = ref<PiModelDto[]>([])
+const selectedPiModel = ref<PiModelDto | null>(null)
+const thinkingLevel = ref<PiThinkingLevel>('medium')
+const thinkingLevels = ref<PiThinkingLevel[]>(['off', 'minimal', 'low', 'medium', 'high'])
+const piSessionState = ref<PiSessionStateDto | null>(null)
 const toolExecutions = ref<ToolExecutionTimelineItemDto[]>([])
+const artifactsByRun = ref<Record<string, PiArtifactDto[]>>({})
 
 const selectedProjectId = ref<string | null>(null)
 const selectedSessionId = ref<string | null>(null)
 const pendingSessionId = ref<string | null>(null)
 const draft = ref('')
-const modelBaseUrl = ref('https://api.openai.com/v1')
-const modelName = ref('gpt-5.4-mini')
-const modelApiKey = ref('')
+const modelName = ref('')
 const shellCommand = ref('npm test')
 const busy = ref(false)
 const streamingAssistant = ref<MessageDto | null>(null)
-const streamingThinkingSteps = ref<ThinkingStep[]>([])
-const streamingToolCalls = ref<ToolCall[]>([])
+const streamingStatus = ref('')
 const eventSource = ref<EventSource | null>(null)
 const rightRailCollapsed = ref(false)
 const rightRailWidth = ref(420)
@@ -68,15 +70,10 @@ const displayMessages = computed(() => streamingAssistant.value
   ? [...messages.value, streamingAssistant.value]
   : messages.value
 )
-const displayThinkingSteps = computed(() => agentThinkingSteps.value.length > 0
-  ? agentThinkingSteps.value
-  : streamingThinkingSteps.value
+const isPiRunning = computed(() =>
+  ['thinking', 'working', 'waiting_approval'].includes(agentActivity.value.status),
 )
-const displayToolCalls = computed(() => [
-  ...agentToolCalls.value,
-  ...streamingToolCalls.value
-])
-const agentLabel = computed(() => agentActivity.value.activeAgentName ?? null)
+const hasSelectedPiModel = computed(() => selectedPiModel.value !== null)
 
 // ---- Background customization ----
 // useBackground returns a singleton ref shared with App.vue (which renders
@@ -139,20 +136,17 @@ async function run(label: string, action: () => Promise<void>) {
 async function loadInitial() {
   busy.value = true
   try {
-    const [projectList, settings, report, readinessReceipt] = await Promise.all([
+    const [projectList, report, readinessReceipt] = await Promise.all([
       api.listProjects(),
-      api.getModelSettings(),
       api.doctor(),
       api.readiness(),
     ])
     projects.value = projectList
-    modelSettings.value = settings
     doctor.value = report
     readiness.value = readinessReceipt
-    modelBaseUrl.value = settings.base_url
-    modelName.value = settings.model
     selectedProjectId.value = projectList[0]?.id ?? null
     await loadSessions()
+    await loadPiModels()
     dismissByKey('home-load')
   } catch (err) {
     banner.error({
@@ -205,10 +199,122 @@ async function loadMessagesAndApprovals() {
     api.getOrchestrationSnapshot(selectedSessionId.value),
     api.listToolExecutions(selectedSessionId.value, { limit: 12 }),
   ])
+  const runIds = [...new Set(messageList.map((message) => message.run_id).filter((id): id is string => Boolean(id)))]
+  const artifactResults = await Promise.allSettled(
+    runIds.map(async (runId) => [runId, await api.listPiRunArtifacts(selectedSessionId.value!, runId)] as const),
+  )
+  artifactsByRun.value = Object.fromEntries(
+    artifactResults.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []),
+  )
   messages.value = messageList
   approvals.value = approvalList
   orchestration.value = orchestrationSnapshot
   toolExecutions.value = toolTimeline
+}
+
+const DEFAULT_THINKING_LEVELS: PiThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high']
+const PI_THINKING_LEVELS = new Set<PiThinkingLevel>([
+  'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max',
+])
+
+function modelKey(model: Pick<PiModelDto, 'provider' | 'id'>): string {
+  return `${model.provider ?? ''}\u0000${model.id ?? ''}`
+}
+
+function modelLabel(model: PiModelDto | null | undefined): string {
+  if (!model || model.id === 'unknown') return ''
+  return model.name || [model.provider, model.id].filter(Boolean).join('/')
+}
+
+function modelThinkingLevels(model: PiModelDto | null): PiThinkingLevel[] {
+  return model?.reasoning ? DEFAULT_THINKING_LEVELS : ['off']
+}
+
+function applyThinkingState(state: { thinking_level?: unknown; thinking_levels?: unknown }) {
+  const supported = Array.isArray(state.thinking_levels)
+    ? state.thinking_levels.filter((level): level is PiThinkingLevel =>
+      typeof level === 'string' && PI_THINKING_LEVELS.has(level as PiThinkingLevel),
+    )
+    : []
+  thinkingLevels.value = supported.length > 0 ? supported : modelThinkingLevels(selectedPiModel.value)
+  const current = state.thinking_level
+  thinkingLevel.value = typeof current === 'string' && PI_THINKING_LEVELS.has(current as PiThinkingLevel)
+    ? current as PiThinkingLevel
+    : thinkingLevels.value.includes(thinkingLevel.value)
+      ? thinkingLevel.value
+      : thinkingLevels.value[0] ?? 'off'
+}
+
+function rememberPiModel(model: PiModelDto | null) {
+  selectedPiModel.value = model
+  modelName.value = modelLabel(model)
+  if (model?.provider && model.id) localStorage.setItem('tinadec-selected-pi-model', modelKey(model))
+  else localStorage.removeItem('tinadec-selected-pi-model')
+}
+
+async function loadPiModels() {
+  const sessionId = selectedSessionId.value
+  try {
+    const [models, state] = await Promise.all([
+      api.listPiModels(sessionId ?? undefined),
+      sessionId ? api.getPiState(sessionId) : Promise.resolve(null),
+    ])
+    piModels.value = models.filter((model) => model.id !== 'unknown')
+    const stateModel = state?.model
+    const current = stateModel && typeof stateModel === 'object'
+      ? piModels.value.find((model) => modelKey(model) === modelKey(stateModel as PiModelDto)) ?? stateModel as PiModelDto
+      : null
+    const remembered = localStorage.getItem('tinadec-selected-pi-model')
+    const selected = current
+      ?? piModels.value.find((model) => modelKey(model) === modelKey(selectedPiModel.value ?? {}))
+      ?? piModels.value.find((model) => modelKey(model) === remembered)
+      ?? null
+    rememberPiModel(selected)
+    piSessionState.value = state
+    if (state) applyThinkingState(state)
+    else applyThinkingState({})
+  } catch {
+    piSessionState.value = null
+    piModels.value = []
+    if (!selectedPiModel.value) modelName.value = ''
+    applyThinkingState({})
+  }
+}
+
+async function selectModel(model: PiModelDto) {
+  const provider = model.provider
+  const modelId = model.id
+  if (!provider || !modelId) return
+  rememberPiModel(model)
+  applyThinkingState({})
+  const sessionId = selectedSessionId.value
+  if (!sessionId) return
+  await run('select Pi model', async () => {
+    const selected = await api.selectPiModel(sessionId, provider, modelId)
+    rememberPiModel(selected ?? model)
+    applyThinkingState(await api.getPiState(sessionId))
+  })
+}
+
+async function selectThinkingLevel(level: PiThinkingLevel) {
+  thinkingLevel.value = level
+  const sessionId = selectedSessionId.value
+  if (!sessionId) return
+  await run('select Pi thinking level', async () => {
+    const selected = await api.setPiThinkingLevel(sessionId, level)
+    applyThinkingState(selected)
+  })
+}
+
+async function applyRuntimePreferences(sessionId: string) {
+  const model = selectedPiModel.value
+  if (!model?.provider || !model.id) {
+    throw new Error(t('chat.selectModelFirst'))
+  }
+  const selected = await api.selectPiModel(sessionId, model.provider, model.id)
+  rememberPiModel(selected ?? model)
+  const thinking = await api.setPiThinkingLevel(sessionId, thinkingLevel.value)
+  applyThinkingState(thinking)
 }
 
 async function openProject() {
@@ -238,13 +344,29 @@ async function createSession(projectId: string) {
     selectedSessionId.value = session.id
     selectedProjectId.value = projectId
     pendingSessionId.value = session.id
+    if (selectedPiModel.value) await applyRuntimePreferences(session.id)
   })
 }
 
 async function sendMessage() {
   const content = draft.value.trim()
   if (!content) return
+  if (isPiRunning.value) {
+    await steerCurrentRun(content)
+    return
+  }
   await handleSend(content)
+}
+
+async function steerCurrentRun(content: string) {
+  const sessionId = selectedSessionId.value
+  if (!sessionId) return
+  try {
+    await api.steerPi(sessionId, content)
+    draft.value = ''
+  } catch (error) {
+    notify.error(error, { title: t('chat.steer') })
+  }
 }
 
 async function handleWelcomeSend(content: string) {
@@ -253,44 +375,46 @@ async function handleWelcomeSend(content: string) {
 
 function streamMessage(sessionId: string, content: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    api.invokeStream(sessionId, content, (chunk) => {
-      if (chunk.kind === 'delta' && chunk.delta && streamingAssistant.value) {
-        streamingAssistant.value = {
-          ...streamingAssistant.value,
-          content: streamingAssistant.value.content + chunk.delta
+    api.invokeStream(
+      sessionId,
+      content,
+      (chunk) => {
+        if (chunk.kind === 'run_started') {
+          streamingStatus.value = chunk.mode === 'space'
+            ? 'DmaEA 已接收任务，正在组织分布式智能体协作。'
+            : 'Pi 已接收任务，正在准备回答。'
         }
-      }
-      if (chunk.kind === 'tool_call_delta' && chunk.tool_call_delta) {
-        const tool = chunk.tool_call_delta
-        if (!streamingToolCalls.value.some((call) => call.id === tool.call_id)) {
-          streamingToolCalls.value = [...streamingToolCalls.value, {
-            id: tool.call_id,
-            toolId: tool.tool_id,
-            toolName: tool.tool_id,
-            status: 'running',
-            startedAt: new Date().toISOString(),
-            completedAt: null,
-            durationMs: null,
-            argsSummary: JSON.stringify(tool.arguments),
-            resultSummary: null,
-            requiresApproval: false,
-            approvalId: null,
-            evidence: [],
-            seq: streamingToolCalls.value.length,
-            risk: 'unknown'
-          }]
+        if (chunk.kind === 'tool_call_delta') {
+          streamingStatus.value = `正在调用 ${chunk.tool_id ?? '工具'}。`
         }
-      }
-      if (chunk.kind === 'error') {
-        reject(new Error(chunk.safe_error_message ?? 'Pi invocation failed'))
-      }
-      if (chunk.kind === 'done') resolve()
-    }, reject, resolve)
+        if (chunk.kind === 'tool_execution') {
+          streamingStatus.value = chunk.summary || `${chunk.tool_id ?? '工具'} ${chunk.status ?? '已更新'}。`
+        }
+        if (chunk.kind === 'artifact_created') {
+          streamingStatus.value = `${chunk.title ?? 'Markdown 产物'} 已生成。`
+        }
+        if (chunk.kind === 'delta' && chunk.delta && streamingAssistant.value) {
+          streamingStatus.value = '正在生成回答。'
+          streamingAssistant.value = {
+            ...streamingAssistant.value,
+            content: streamingAssistant.value.content + chunk.delta,
+          }
+        }
+        if (chunk.kind === 'error') {
+          reject(new Error(chunk.safe_error_message ?? 'Pi invocation failed'))
+        }
+        if (chunk.kind === 'done') resolve()
+      },
+      reject,
+      resolve,
+      currentMode.value,
+    )
   })
 }
 
 async function handleSend(content: string) {
   await run('send message', async () => {
+    if (!selectedPiModel.value) throw new Error(t('chat.selectModelFirst'))
     let sessionId = selectedSessionId.value
 
     if (!sessionId && selectedProjectId.value) {
@@ -305,7 +429,9 @@ async function handleSend(content: string) {
       throw new Error('Open a project before sending a message.')
     }
 
+    await applyRuntimePreferences(sessionId)
     draft.value = ''
+    streamingStatus.value = '正在创建 Pi 运行。'
     streamingAssistant.value = {
       id: `stream-${Date.now()}`,
       session_id: sessionId,
@@ -313,16 +439,6 @@ async function handleSend(content: string) {
       content: '',
       created_at: new Date().toISOString()
     }
-    streamingThinkingSteps.value = [{
-      id: `stream-${Date.now()}-thinking`,
-      type: 'run_started',
-      title: 'Pi 正在处理',
-      description: '正在分析请求并生成回答',
-      timestamp: new Date().toISOString(),
-      durationMs: null
-    }]
-    streamingToolCalls.value = []
-
     try {
       await streamMessage(sessionId, content)
 
@@ -346,10 +462,40 @@ async function handleSend(content: string) {
       await loadMessagesAndApprovals()
     } finally {
       streamingAssistant.value = null
-      streamingThinkingSteps.value = []
-      streamingToolCalls.value = []
+      streamingStatus.value = ''
     }
   })
+}
+
+async function abortCurrentRun() {
+  const sessionId = selectedSessionId.value
+  if (!sessionId) return
+  await run('interrupt Pi run', async () => {
+    await api.abortPi(sessionId)
+  })
+}
+
+function continueArtifact(artifact: PiArtifactDto) {
+  currentMode.value = artifact.kind === 'spec' ? 'plan' : 'agent'
+  draft.value = artifact.kind === 'spec'
+    ? '基于上一条规范生成可执行规划，并明确文件、步骤、验证和风险。'
+    : '执行上一条已批准的规划。先核对当前工作区状态，完成后报告改动、验证和剩余风险。'
+}
+
+async function downloadArtifact(artifact: PiArtifactDto) {
+  const sessionId = selectedSessionId.value
+  if (!sessionId) return
+  try {
+    const source = await api.getPiArtifact(sessionId, artifact.id)
+    const url = URL.createObjectURL(new Blob([source.content ?? ''], { type: 'text/markdown' }))
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `${artifact.kind}-${artifact.run_id}.md`
+    anchor.click()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    notify.error(error, { title: artifact.title })
+  }
 }
 
 async function requestShellApproval() {
@@ -395,8 +541,10 @@ watch(selectedProjectId, () => {
   void loadSessions()
 })
 
-watch(selectedSessionId, () => {
+watch(selectedSessionId, (sessionId) => {
+  if (sessionId) localStorage.setItem('tinadec-active-pi-session', sessionId)
   void loadMessagesAndApprovals()
+  void loadPiModels()
   reconnectEvents()
 })
 
@@ -412,7 +560,7 @@ onUnmounted(() => {
 
 <template>
   <Transition :name="riseTransitionName" appear>
-    <main class="shell" :style="backgroundStyle">
+    <main class="shell" data-ark-theme="ark" data-ark-depth="moderate" :style="backgroundStyle">
       <!-- Background Layer is now rendered globally in App.vue, outside the page transition -->
 
       <!-- Full-width draggable bar for window dragging -->
@@ -423,10 +571,10 @@ onUnmounted(() => {
     <section
       class="workspace"
       :style="{
-        '--chat-left': '276px',
-        '--chat-right': rightRailCollapsed ? '52px' : `${rightRailWidth + 16}px`,
-        '--chat-top': '8px',
-        '--chat-bottom': '8px'
+        '--chat-left': '268px',
+        '--chat-right': rightRailCollapsed ? '52px' : `${rightRailWidth + 8}px`,
+        '--chat-top': '40px',
+        '--chat-bottom': '0px'
       }"
     >
       <ChatPanel
@@ -437,19 +585,27 @@ onUnmounted(() => {
         :current-project="currentProject"
         :selected-project-id="selectedProjectId"
         :model-name="modelName"
+        :models="piModels"
+        :runtime-ready="hasSelectedPiModel"
+        :thinking-level="thinkingLevel"
+        :thinking-levels="thinkingLevels"
         :orchestration="orchestration"
+        :artifacts-by-run="artifactsByRun"
+        :streaming-status="streamingStatus"
         :busy="busy"
+        :is-running="isPiRunning"
         :draft="draft"
         :mode="currentMode"
         :permission="currentPermission"
-        :thinking-steps="displayThinkingSteps"
-        :tool-calls="displayToolCalls"
-        :agent-label="agentLabel"
         :panel-style="chatPanelStyle"
         :panel-data-attrs="chatPanelDataAttrs"
         @update:draft="draft = $event"
         @update:mode="currentMode = $event"
         @update:permission="currentPermission = $event"
+        @select-model="selectModel"
+        @update:thinking-level="selectThinkingLevel"
+        @download-artifact="downloadArtifact"
+        @continue-artifact="continueArtifact"
         @send="sendMessage"
         @welcome-send="handleWelcomeSend"
         @create-project="openProject"
@@ -487,13 +643,16 @@ onUnmounted(() => {
         :current-project-path="currentProject?.path"
         :agent-activity="agentActivity"
         :agent-states="agentStatesMap"
-        :thinking-steps="displayThinkingSteps"
+        :thinking-steps="agentThinkingSteps"
+        :tool-calls="agentToolCalls"
         :progress-events="agentProgressEvents"
+        :pi-session-state="piSessionState"
         :panel-style="contextPanelStyle"
         :panel-data-attrs="contextPanelDataAttrs"
         @request-approval="requestShellApproval"
         @decide-approval="decideApproval"
         @approval-created="recordApproval"
+        @abort-run="abortCurrentRun"
         @update:shell-command="shellCommand = $event"
       />
     </section>
