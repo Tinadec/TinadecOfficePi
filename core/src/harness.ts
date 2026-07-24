@@ -26,6 +26,7 @@ const subagentsExtension = require.resolve("pi-subagents");
 
 export class PiHarness {
 	private readonly live = new Map<string, LiveSession>();
+	private readonly invocationTails = new Map<string, Promise<void>>();
 	private readonly modelRuntime = ModelRuntime.create({
 		authPath: join(agentDir, "auth.json"),
 		modelsPath: join(agentDir, "models.json"),
@@ -34,6 +35,16 @@ export class PiHarness {
 	constructor(private readonly store: CoreStore) {}
 
 	async invoke(
+		sessionId: string,
+		content: string,
+		onChunk?: (chunk: Chunk) => void,
+	): Promise<{ run_id: string; content: string }> {
+		return this.enqueue(sessionId, () =>
+			this.invokeOne(sessionId, content, onChunk),
+		);
+	}
+
+	private async invokeOne(
 		sessionId: string,
 		content: string,
 		onChunk?: (chunk: Chunk) => void,
@@ -113,6 +124,25 @@ export class PiHarness {
 			throw error;
 		} finally {
 			unsubscribe();
+		}
+	}
+
+	private async enqueue<T>(sessionId: string, work: () => Promise<T>): Promise<T> {
+		const previous = this.invocationTails.get(sessionId) ?? Promise.resolve();
+		let release!: () => void;
+		const completion = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const tail = previous.then(() => completion);
+		this.invocationTails.set(sessionId, tail);
+		await previous;
+		try {
+			return await work();
+		} finally {
+			release();
+			if (this.invocationTails.get(sessionId) === tail) {
+				this.invocationTails.delete(sessionId);
+			}
 		}
 	}
 
