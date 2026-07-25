@@ -110,9 +110,10 @@
   background: transparent;
 }
 
-/* Legacy CSS variables for backward compatibility */
 /* Ark UI palette — ink/paper/signal cyan, restrained acid-green for success.
    Family: ark  Depth: moderate  (data-ark-theme="ark" data-ark-depth="moderate")
+   ink=#080a0b  paper=#f4f6f6  signal=#18d1ff  state=#c8eb21  muted=#8d9396 */
+:root[data-theme="dark"] {
   --bg-primary: #080a0b;
   --bg-secondary: #0f1214;
   --bg-tertiary: #161a1c;
