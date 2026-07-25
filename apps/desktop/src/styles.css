@@ -5071,6 +5071,9 @@ transform: translateX(30px);
   transform: none !important;
   transition: none !important;
   animation: none !important;
+  /* Always show the theme's primary colour as a fallback, even when a
+     custom background type is selected but the source is empty or broken. */
+  background: var(--bg-primary);
 }
 
 /* When no custom background is set, the layer shows the theme's primary

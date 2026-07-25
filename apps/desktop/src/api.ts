@@ -1135,12 +1135,25 @@ export const api = {
 	refreshPiModels: () =>
 		request<PiModelDto[]>("/api/v1/pi/models/refresh", { method: "POST" }),
 	listPiModelConfigs: () =>
-		request<Array<{ kind: string; provider: string; modelId: string; displayName: string; baseUrl: string; api: string; reasoning: boolean }>>("/api/v1/pi/model-configs"),
+		request<
+			Array<{
+				kind: string;
+				provider: string;
+				modelId: string;
+				displayName: string;
+				baseUrl: string;
+				api: string;
+				reasoning: boolean;
+			}>
+		>("/api/v1/pi/model-configs"),
 	deletePiModelConfig: (provider: string, modelId: string) =>
-		request<{ provider: string; modelId: string }>("/api/v1/pi/model-configs/delete", {
-			method: "POST",
-			body: JSON.stringify({ provider, modelId }),
-		}),
+		request<{ provider: string; modelId: string }>(
+			"/api/v1/pi/model-configs/delete",
+			{
+				method: "POST",
+				body: JSON.stringify({ provider, modelId }),
+			},
+		),
 	selectPiModel: (sessionId: string, provider: string, id: string) =>
 		request<PiModelDto | null>(
 			`/api/v1/sessions/${encodeURIComponent(sessionId)}/pi/model`,

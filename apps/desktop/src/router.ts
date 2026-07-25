@@ -1,45 +1,45 @@
-import { createRouter, createWebHashHistory } from 'vue-router'
-import HomePage from './pages/HomePage.vue'
+import { createRouter, createWebHashHistory } from "vue-router";
+import HomePage from "./pages/HomePage.vue";
 
 const router = createRouter({
-  history: createWebHashHistory(),
-  routes: [
-    {
-      path: '/',
-      name: 'home',
-      component: HomePage,
-    },
-    {
-      path: '/settings',
-      name: 'settings',
-      component: () => import('./pages/SettingsPage.vue'),
-    },
-    {
-      path: '/market',
-      name: 'market',
-      component: () => import('./pages/MarketPage.vue'),
-    },
-    {
-      path: '/debug-studio',
-      name: 'debug-studio',
-      component: () => import('./pages/DebugStudioPage.vue'),
-    },
-    {
-      path: '/code-editor',
-      name: 'code-editor',
-      component: () => import('./pages/CodePage.vue'),
-    },
-    {
-      path: '/panel',
-      name: 'detached-panel',
-      component: () => import('./pages/DetachedPanelPage.vue'),
-    },
-    {
-      path: '/pet',
-      name: 'desktop-pet',
-      component: () => import('./pages/DesktopPetPage.vue'),
-    },
-  ],
-})
+	history: createWebHashHistory(),
+	routes: [
+		{
+			path: "/",
+			name: "home",
+			component: HomePage,
+		},
+		{
+			path: "/settings",
+			name: "settings",
+			component: () => import("./pages/SettingsPage.vue"),
+		},
+		{
+			path: "/market",
+			name: "market",
+			component: () => import("./pages/MarketPage.vue"),
+		},
+		{
+			path: "/debug-studio",
+			name: "debug-studio",
+			component: () => import("./pages/DebugStudioPage.vue"),
+		},
+		{
+			path: "/code-editor",
+			name: "code-editor",
+			component: () => import("./pages/CodePage.vue"),
+		},
+		{
+			path: "/panel",
+			name: "detached-panel",
+			component: () => import("./pages/DetachedPanelPage.vue"),
+		},
+		{
+			path: "/pet",
+			name: "desktop-pet",
+			component: () => import("./pages/DesktopPetPage.vue"),
+		},
+	],
+});
 
-export default router
+export default router;

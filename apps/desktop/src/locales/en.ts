@@ -462,7 +462,8 @@ export default {
 		agentProfilesWritable: "Agent profiles",
 		agentProfilesWritableHint: "Modes, tools, and prompts can be saved",
 		runtimePreviewOnly: "Runtime bindings",
-		runtimePreviewOnlyHint: "Per-agent Pi model routes are saved and used by later runs",
+		runtimePreviewOnlyHint:
+			"Per-agent Pi model routes are saved and used by later runs",
 		activeAgents: "Enabled agents",
 		agentProfiles: "Agent profiles",
 		centerOverview: "Overview",
@@ -643,8 +644,7 @@ export default {
 		runtimeBindingPendingCoreHint:
 			"Choose an available Pi model or automatic route before saving.",
 		saveRuntimeBinding: "Save runtime source",
-		runtimeBindingUnsupported:
-			"Runtime binding is not writable for this agent",
+		runtimeBindingUnsupported: "Runtime binding is not writable for this agent",
 		routePurpose: "Route Purpose",
 		routeProvider: "Model Instance",
 		routeModel: "Model Name",
