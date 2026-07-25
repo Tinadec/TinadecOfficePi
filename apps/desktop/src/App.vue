@@ -160,7 +160,7 @@ router.beforeEach((to, from, next) => {
        会在子元素挂载前就移除 enter-active 类，导致动画失效。 -->
   <div v-if="!isConnecting" class="main-content">
     <RouterView v-slot="{ Component }">
-      <Transition :name="transitionName" :css="!isChildWindow" mode="out-in">
+      <Transition :name="transitionName" :css="!isChildWindow" mode="out-in" appear>
         <component :is="Component" />
       </Transition>
     </RouterView>

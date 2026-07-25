@@ -1,4 +1,5 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
+import HomePage from './pages/HomePage.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -6,7 +7,7 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
-      component: () => import('./pages/HomePage.vue'),
+      component: HomePage,
     },
     {
       path: '/settings',

@@ -106,7 +106,7 @@ interface PiModelConfigResult {
 }
 
 interface PiModelConfigSummary {
-	kind: "custom";
+	kind: "builtin" | "custom";
 	provider: string;
 	modelId: string;
 	displayName: string;

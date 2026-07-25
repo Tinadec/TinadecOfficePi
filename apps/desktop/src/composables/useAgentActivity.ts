@@ -66,7 +66,8 @@ export interface ThinkingStep {
 		| "agent_assignment"
 		| "supervision"
 		| "context_pack"
-		| "step_result";
+		| "step_result"
+		| "model_thinking";
 	title: string;
 	description: string;
 	timestamp: string;
@@ -853,12 +854,51 @@ export function useAgentActivity(
 		if (cleanupTimer) clearTimeout(cleanupTimer);
 	});
 
+	function appendThinkingDelta(delta: string) {
+		const text = delta.trimEnd();
+		if (!text) return;
+		const now = new Date().toISOString();
+		const existing = [...thinkingSteps.value]
+			.reverse()
+			.find((step) => step.type === "model_thinking");
+		if (existing) {
+			thinkingSteps.value = thinkingSteps.value.map((step) =>
+				step.id === existing.id
+					? {
+							...step,
+							description: `${step.description}${delta}`,
+							timestamp: now,
+						}
+					: step,
+			);
+			return;
+		}
+		thinkingSteps.value = [
+			...thinkingSteps.value,
+			{
+				id: `thinking-${Date.now()}`,
+				type: "model_thinking",
+				title: "模型思考",
+				description: delta,
+				timestamp: now,
+				durationMs: null,
+			},
+		];
+		activity.value = {
+			...activity.value,
+			status:
+				activity.value.status === "idle" ? "thinking" : activity.value.status,
+			lastUpdated: now,
+		};
+	}
+
 	return {
 		activity,
 		toolCalls,
 		thinkingSteps,
 		agentStates,
 		progressEvents,
+		appendThinkingDelta,
 		reset,
 		refreshToolExecutions,
 	};

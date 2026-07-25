@@ -44,8 +44,9 @@ function updateDropdownPosition() {
   const margin = 8
   const spaceAbove = rect.top - margin
   const spaceBelow = window.innerHeight - rect.bottom - margin
-  const menuHeight = Math.min(dropdownRef.value?.offsetHeight ?? 300, 320)
-  const above = spaceAbove >= menuHeight || spaceAbove > spaceBelow
+  const menuHeight = Math.min(dropdownRef.value?.scrollHeight ?? 300, 320)
+  // Composer sits low: prefer above, flip down only if above cannot fit.
+  const above = spaceAbove >= 96 || spaceBelow < 96
   const maxHeight = Math.max(96, Math.min(menuHeight, above ? spaceAbove : spaceBelow))
   dropdownStyle.value = {
     position: 'fixed',

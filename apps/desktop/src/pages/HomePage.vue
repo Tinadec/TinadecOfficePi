@@ -18,9 +18,8 @@ const router = useRouter()
 const { t } = useI18n()
 const { notify, banner, dismissByKey } = useNotifications()
 
-// 子窗口（?splash=0）跳过 main-rise 入场动画：复用主窗口已建立的连接，不重播启动序列。
-const isChildWindow = new URLSearchParams(window.location.search).get('splash') === '0'
-const riseTransitionName = isChildWindow ? 'no-transition' : 'main-rise'
+// ponytail: nested page+main-rise transitions left Home blank after Settings→Home.
+// App.vue already owns route transitions; keep Home shell always painted.
 
 const projects = ref<ProjectDto[]>([])
 const sessions = ref<SessionDto[]>([])
@@ -64,6 +63,7 @@ const {
   thinkingSteps: agentThinkingSteps,
   agentStates: agentStatesMap,
   progressEvents: agentProgressEvents,
+  appendThinkingDelta,
 } = useAgentActivity(sessionIdRef, orchestration)
 
 const displayMessages = computed(() => streamingAssistant.value
@@ -384,6 +384,10 @@ function streamMessage(sessionId: string, content: string): Promise<void> {
             ? 'DmaEA 已接收任务，正在组织分布式智能体协作。'
             : 'Pi 已接收任务，正在准备回答。'
         }
+        if (chunk.kind === 'thinking_delta' && chunk.delta) {
+          streamingStatus.value = '模型思考中。'
+          appendThinkingDelta(chunk.delta)
+        }
         if (chunk.kind === 'tool_call_delta') {
           streamingStatus.value = `正在调用 ${chunk.tool_id ?? '工具'}。`
         }
@@ -559,7 +563,6 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <Transition :name="riseTransitionName" appear>
     <main class="shell" data-ark-theme="ark" data-ark-depth="moderate" :style="backgroundStyle">
       <!-- Background Layer is now rendered globally in App.vue, outside the page transition -->
 
@@ -657,5 +660,4 @@ onUnmounted(() => {
       />
     </section>
     </main>
-  </Transition>
 </template>

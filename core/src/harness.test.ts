@@ -4,6 +4,7 @@ import test from "node:test";
 import {
 	PiHarness,
 	isIsolatedSessionFile,
+	isSubagentExecution,
 	lastAssistantResult,
 	promptForMode,
 	resolveAgentDir,
@@ -85,6 +86,13 @@ test("subagentNames recognizes every supported delegation shape", () => {
 		}),
 		["meeting", "planner", "worker", "supervisor"],
 	);
+});
+
+test("isSubagentExecution ignores management actions", () => {
+	assert.equal(isSubagentExecution({ agent: "scout" }), true);
+	assert.equal(isSubagentExecution({ tasks: [{ agent: "reviewer" }] }), true);
+	assert.equal(isSubagentExecution({ action: "list" }), false);
+	assert.equal(isSubagentExecution({ action: "status", id: "x" }), false);
 });
 
 test("PiHarness serializes concurrent work for one session", async () => {

@@ -35,6 +35,8 @@ type PairDelegation = {
 	invoked: boolean;
 	toolCallIds: Set<string>;
 	requestedAgents: Set<string>;
+	completedAgents: Set<string>;
+	toolAgents: Map<string, string[]>;
 };
 export interface PiRunAgentConfig {
 	id: string;
@@ -174,6 +176,8 @@ export class PiHarness {
 			invoked: false,
 			toolCallIds: new Set(),
 			requestedAgents: new Set(),
+			completedAgents: new Set(),
+			toolAgents: new Map(),
 		};
 		let eventTail = Promise.resolve();
 
@@ -213,15 +217,21 @@ export class PiHarness {
 		);
 
 		const unsubscribe = live.session.subscribe((event) => {
-			if (
-				event.type === "message_update" &&
-				event.assistantMessageEvent.type === "text_delta"
-			) {
-				onChunk?.(
-					chunk(run.id, sessionId, "delta", {
-						delta: event.assistantMessageEvent.delta,
-					}),
-				);
+			if (event.type === "message_update") {
+				const update = event.assistantMessageEvent;
+				if (update.type === "text_delta") {
+					onChunk?.(
+						chunk(run.id, sessionId, "delta", {
+							delta: update.delta,
+						}),
+					);
+				} else if (update.type === "thinking_delta") {
+					onChunk?.(
+						chunk(run.id, sessionId, "thinking_delta", {
+							delta: update.delta,
+						}),
+					);
+				}
 			}
 			eventTail = eventTail
 				.then(() =>
@@ -254,8 +264,9 @@ export class PiHarness {
 						),
 					)
 					.map((agent) => agent.runtimeAgent);
+				// ponytail: only successful execution ends count; start/management lookups do not.
 				if (
-					!required.every((agent) => pairDelegation.requestedAgents.has(agent))
+					!required.every((agent) => pairDelegation.completedAgents.has(agent))
 				) {
 					throw new Error(
 						"space.full_duplex did not run its configured planner, worker, and supervisor roles.",
@@ -368,9 +379,10 @@ export class PiHarness {
 		await mkdir(directory, { recursive: true });
 		for (const agent of agents) {
 			if (agent.runtimeAgent === "parent") continue;
+			// Literal inherit bypasses subagents.defaultModel and uses parent ctx.model.
 			const model = agent.model
 				? `\nmodel: ${agent.model.provider}/${agent.model.id}`
-				: "";
+				: "\nmodel: inherit";
 			const acceptanceRole =
 				agent.layer === "execution" && agent.agentType === "worker_pool"
 					? "writer"
@@ -583,19 +595,21 @@ export class PiHarness {
 			}),
 		);
 
+		if (event.toolName !== "subagent" || !isSubagentExecution(event.args))
+			return;
 		const requestedAgents = subagentNames(event.args);
 		for (const agent of requestedAgents)
 			pairDelegation.requestedAgents.add(agent);
 		if (
-			event.toolName === "subagent" &&
-			((mode === "pair" &&
+			(mode === "pair" &&
 				requestedAgents.includes("scout") &&
 				requestedAgents.includes("reviewer")) ||
-				(mode === "space" &&
-					requestedAgents.some((agent) => agent.startsWith("tinadec-"))))
+			(mode === "space" &&
+				requestedAgents.some((agent) => agent.startsWith("tinadec-")))
 		) {
 			pairDelegation.invoked = true;
 			pairDelegation.toolCallIds.add(event.toolCallId);
+			pairDelegation.toolAgents.set(event.toolCallId, requestedAgents);
 			await this.updatePairAgents(runId, "running", event.args);
 		}
 	}
@@ -671,6 +685,12 @@ export class PiHarness {
 		execution.updated_seq = published.seq;
 		await this.store.upsertToolExecution(execution);
 		if (pairDelegation.toolCallIds.has(event.toolCallId)) {
+			if (!event.isError) {
+				for (const agent of pairDelegation.toolAgents.get(event.toolCallId) ??
+					[]) {
+					pairDelegation.completedAgents.add(agent);
+				}
+			}
 			await this.updatePairAgents(
 				runId,
 				event.isError ? "failed" : "completed",
@@ -905,7 +925,8 @@ export class PiHarness {
 		const models = new Map<string, ModelInfo>();
 		for (const model of await runtime.getAvailable()) {
 			const info = modelInfo(model);
-			if (info) models.set(`${info.provider}/${info.id}`, info);
+			// Case-fold so GPT-5.6-terra and gpt-5.6-terra collapse to one option.
+			if (info) models.set(`${info.provider}/${info.id}`.toLowerCase(), info);
 		}
 		return [...models.values()];
 	}
@@ -1139,6 +1160,19 @@ function compactEvidence(value: unknown): string[] {
 
 function truncate(value: string, limit: number): string {
 	return value.length > limit ? `${value.slice(0, limit - 1)}…` : value;
+}
+
+export function isSubagentExecution(value: unknown): boolean {
+	if (!value || typeof value !== "object") return false;
+	const input = value as Record<string, unknown>;
+	const action = typeof input.action === "string" ? input.action : undefined;
+	if (action && !["", "run", "execute"].includes(action)) return false;
+	return Boolean(
+		typeof input.agent === "string" ||
+			input.tasks ||
+			input.chain ||
+			input.parallel,
+	);
 }
 
 export function subagentNames(value: unknown): string[] {

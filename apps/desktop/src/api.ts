@@ -684,6 +684,7 @@ export interface ModelStreamChunkDto {
 		| "context"
 		| "run_started"
 		| "delta"
+		| "thinking_delta"
 		| "tool_call_delta"
 		| "tool_execution"
 		| "artifact_created"

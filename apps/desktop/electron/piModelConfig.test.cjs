@@ -97,7 +97,7 @@ test("edits and deletes only the selected isolated custom model", async () => {
 		update: true,
 	});
 
-	assert.deepEqual(listPiModelConfigs(), [
+	assert.deepEqual(await listPiModelConfigs(), [
 		{
 			kind: "custom",
 			provider: "local-llm",
@@ -116,16 +116,29 @@ test("edits and deletes only the selected isolated custom model", async () => {
 			api: "openai-responses",
 			reasoning: true,
 		},
+		{
+			kind: "builtin",
+			provider: "openai",
+			modelId: "openai",
+			displayName: "openai",
+			baseUrl: "",
+			api: "",
+			reasoning: false,
+		},
 	]);
 	await deletePiModel({ provider: "local-llm", modelId: "renamed-chat" });
 	assert.deepEqual(
-		listPiModelConfigs().map((model) => model.modelId),
+		(await listPiModelConfigs())
+			.filter((model) => model.kind === "custom")
+			.map((model) => model.modelId),
 		["second-model"],
 	);
 	await deletePiModel({ provider: "local-llm", modelId: "second-model" });
-	assert.deepEqual(listPiModelConfigs(), []);
+	await deletePiModel({ provider: "openai" });
+	assert.deepEqual(await listPiModelConfigs(), []);
 	const auth = JSON.parse(
 		readFileSync(path.join(agentDir, "auth.json"), "utf8"),
 	);
 	assert.equal(auth["local-llm"], undefined);
+	assert.equal(auth.openai, undefined);
 });

@@ -29,14 +29,16 @@ function updatePosition() {
   const rect = trigger.getBoundingClientRect()
   const gap = 6
   const margin = 8
-  const menuHeight = Math.min(menu.offsetHeight || 240, window.innerHeight - margin * 2)
+  const naturalHeight = menu.scrollHeight || menu.offsetHeight || 240
   const menuWidth = menu.offsetWidth || 128
   const spaceAbove = rect.top - margin
   const spaceBelow = window.innerHeight - rect.bottom - margin
-  const above = props.placement === 'top'
-    ? spaceAbove >= 96 || spaceAbove >= spaceBelow
+  // Prefer requested placement; only flip when that side cannot fit ~96px.
+  const preferAbove = props.placement === 'top'
+  const above = preferAbove
+    ? spaceAbove >= 96 || spaceBelow < 96
     : spaceBelow < 96 && spaceAbove > spaceBelow
-  const maxHeight = Math.max(96, Math.min(menuHeight, above ? spaceAbove : spaceBelow))
+  const maxHeight = Math.max(96, Math.min(naturalHeight, above ? spaceAbove : spaceBelow, 360))
 
   menuStyle.value = {
     position: 'fixed',
@@ -44,6 +46,7 @@ function updatePosition() {
       ? Math.max(margin, rect.top - gap - maxHeight)
       : Math.min(window.innerHeight - margin - maxHeight, rect.bottom + gap)}px`,
     left: `${Math.max(margin, Math.min(rect.left, window.innerWidth - menuWidth - margin))}px`,
+    width: `${Math.min(menuWidth, window.innerWidth - margin * 2)}px`,
     maxHeight: `${maxHeight}px`,
   }
 }
@@ -54,6 +57,7 @@ async function setOpen(next: boolean) {
   if (next) {
     await nextTick()
     updatePosition()
+    requestAnimationFrame(updatePosition)
   }
 }
 

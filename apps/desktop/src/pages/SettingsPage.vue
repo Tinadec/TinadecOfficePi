@@ -123,7 +123,7 @@ interface DesktopAppConfig {
 }
 
 interface PiModelConfigSummary {
-  kind: 'custom'
+  kind: 'builtin' | 'custom'
   provider: string
   modelId: string
   displayName: string
@@ -1014,9 +1014,13 @@ async function refreshPiModels() {
 }
 
 function piModelConfigFor(model: PiModelDto): PiModelConfigSummary | null {
-  return piModelConfigs.value.find(
-    (config) => config.provider === model.provider && config.modelId === model.id,
-  ) ?? null
+  const provider = (model.provider ?? '').toLowerCase()
+  const modelId = (model.id ?? '').toLowerCase()
+  return piModelConfigs.value.find((config) => {
+    if (config.provider.toLowerCase() !== provider) return false
+    if (config.kind === 'builtin') return true
+    return config.modelId.toLowerCase() === modelId
+  }) ?? null
 }
 
 async function loadPiModelConfigs() {
@@ -1048,14 +1052,14 @@ function openPiModelModal() {
 
 function openPiModelEditor(config: PiModelConfigSummary) {
   piEditingModel.value = config
-  piModelForm.kind = 'custom'
+  piModelForm.kind = config.kind
   piModelForm.provider = config.provider
   piModelForm.apiKey = ''
   piModelForm.baseUrl = config.baseUrl
-  piModelForm.modelId = config.modelId
-  piModelForm.previousModelId = config.modelId
+  piModelForm.modelId = config.kind === 'custom' ? config.modelId : ''
+  piModelForm.previousModelId = config.kind === 'custom' ? config.modelId : ''
   piModelForm.displayName = config.displayName
-  piModelForm.api = config.api
+  piModelForm.api = config.api || 'openai-completions'
   piModelForm.reasoning = config.reasoning
   showPiModelModal.value = true
 }

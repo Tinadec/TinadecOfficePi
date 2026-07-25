@@ -51,7 +51,7 @@ const emit = defineEmits<{
 // ---- Section collapse state ----
 const statusExpanded = ref(true)
 const taskGraphCollapsed = ref(false)
-const thinkingExpanded = ref(false)
+const thinkingExpanded = ref(true)
 
 // ---- Status config ----
 const statusConfig = computed(() => {
@@ -170,6 +170,8 @@ const stepConfig = (type: ThinkingStep['type']) => {
       return { icon: Package, color: 'step-context', label: t('agent.stepContext') }
     case 'step_result':
       return { icon: CheckCircle2, color: 'step-result', label: t('agent.stepResult') }
+    case 'model_thinking':
+      return { icon: Brain, color: 'step-run', label: t('agent.thinking') }
     default:
       return { icon: Brain, color: 'step-default', label: t('agent.stepThinking') }
   }
@@ -455,8 +457,11 @@ const visibleProgressEvents = computed(() => [...props.progressEvents].slice(-15
   flex-direction: column;
   gap: 8px;
   padding: 10px;
+  box-sizing: border-box;
   height: 100%;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .agent-runtime-strip {
@@ -1160,8 +1165,15 @@ const visibleProgressEvents = computed(() => [...props.progressEvents].slice(-15
 .agent-panel-thinking-desc {
   display: -webkit-box;
   overflow: hidden;
+  white-space: pre-wrap;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 4;
+}
+
+.agent-panel-thinking-step.step-run .agent-panel-thinking-desc {
+  -webkit-line-clamp: 24;
+  max-height: 320px;
+  overflow: auto;
 }
 
 .agent-activity-panel :deep(.tool-call-card) {

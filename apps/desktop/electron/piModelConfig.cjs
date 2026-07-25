@@ -185,23 +185,17 @@ async function savePiModel(input) {
 	return { provider, modelId };
 }
 
-function listPiModelConfigs() {
-	const { modelsPath } = piModelPaths();
-	const config = readModelsConfig(modelsPath);
+async function listPiModelConfigs() {
+	const paths = piModelPaths();
+	const config = readModelsConfig(paths.modelsPath);
 	const providers =
 		config.providers &&
 		typeof config.providers === "object" &&
 		!Array.isArray(config.providers)
 			? config.providers
 			: {};
-	return Object.entries(providers).flatMap(([provider, definition]) => {
-		if (
-			BUILTIN_PROVIDERS.has(provider) ||
-			!definition ||
-			typeof definition !== "object"
-		) {
-			return [];
-		}
+	const custom = Object.entries(providers).flatMap(([provider, definition]) => {
+		if (!definition || typeof definition !== "object") return [];
 		const models = Array.isArray(definition.models) ? definition.models : [];
 		return models.flatMap((model) => {
 			if (!model || typeof model !== "object" || typeof model.id !== "string")
@@ -222,12 +216,42 @@ function listPiModelConfigs() {
 			];
 		});
 	});
+	const customProviders = new Set(custom.map((entry) => entry.provider));
+	const { AuthStorage } = await import(
+		pathToFileURL(paths.authStorageModule).href
+	);
+	const authEntries = await AuthStorage.create(paths.authPath).list();
+	const builtins = authEntries
+		.filter(
+			(entry) =>
+				BUILTIN_PROVIDERS.has(entry.providerId) &&
+				!customProviders.has(entry.providerId),
+		)
+		.map((entry) => ({
+			kind: "builtin",
+			provider: entry.providerId,
+			modelId: entry.providerId,
+			displayName: entry.providerId,
+			baseUrl: "",
+			api: "",
+			reasoning: false,
+		}));
+	return [...custom, ...builtins];
 }
 
 async function deletePiModel(input) {
-	const provider = customProviderId(input?.provider);
-	const modelId = requiredString(input?.modelId, "Model id", 200);
+	const rawProvider = requiredString(input?.provider, "Provider", 64);
+	const modelId = optionalString(input?.modelId, 200);
 	const paths = piModelPaths();
+	if (BUILTIN_PROVIDERS.has(rawProvider)) {
+		const { AuthStorage } = await import(
+			pathToFileURL(paths.authStorageModule).href
+		);
+		await AuthStorage.create(paths.authPath).delete(rawProvider);
+		return { provider: rawProvider, modelId: modelId ?? rawProvider };
+	}
+	const provider = customProviderId(rawProvider);
+	if (!modelId) throw new Error("Model id is required.");
 	const config = readModelsConfig(paths.modelsPath);
 	const providers =
 		config.providers &&

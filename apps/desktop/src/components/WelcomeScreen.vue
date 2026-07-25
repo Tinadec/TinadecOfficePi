@@ -114,7 +114,8 @@ function updateDropdownPosition() {
   const menuHeight = Math.min(projectDropdownRef.value?.offsetHeight ?? 260, 360)
   const spaceAbove = rect.top - margin
   const spaceBelow = window.innerHeight - rect.bottom - margin
-  const above = spaceAbove >= menuHeight || spaceAbove > spaceBelow
+  // Project picker sits higher: prefer below, flip up only if below is tight.
+  const above = spaceBelow < 96 && spaceAbove > spaceBelow
   const maxHeight = Math.max(96, Math.min(menuHeight, above ? spaceAbove : spaceBelow))
   dropdownStyle.value = {
     position: 'fixed',

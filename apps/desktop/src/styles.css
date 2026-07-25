@@ -111,124 +111,124 @@
 }
 
 /* Legacy CSS variables for backward compatibility */
-/* Codex-style simplified palette: single teal accent + grayscale, minimal multi-color */
-:root[data-theme="dark"] {
-  --bg-primary: #0a0e14;
-  --bg-secondary: #11151c;
-  --bg-tertiary: #1a1f29;
-  --bg-overlay: #161b22;
-  --bg-hover: #1a1f29;
-  --bg-selected: #0d2e2a;
-  --bg-selected-outline: #2ec4b6;
-  --bg-user-msg: #0d2e2a;
-  --bg-user-msg-border: #2ec4b6;
-  --bg-assistant-msg: #11151c;
-  --bg-assistant-msg-border: #1a1f29;
-  --bg-avatar: #1a1f29;
-  --bg-empty-action: #11151c;
-  --bg-diff: #0a0e14;
-  --bg-input: #0a0e14;
-  --bg-button: #1a1f29;
-  --bg-button-hover: #242a36;
-  --bg-primary-button: #1f8f80;
-  --bg-primary-button-hover: #2ec4b6;
-  --bg-secondary-button: #1a1f29;
-  --bg-secondary-button-hover: #242a36;
+/* Ark UI palette — ink/paper/signal cyan, restrained acid-green for success.
+   Family: ark  Depth: moderate  (data-ark-theme="ark" data-ark-depth="moderate")
+  --bg-primary: #080a0b;
+  --bg-secondary: #0f1214;
+  --bg-tertiary: #161a1c;
+  --bg-overlay: #0c0e10;
+  --bg-hover: #161a1c;
+  --bg-selected: #0c1a22;
+  --bg-selected-outline: #18d1ff;
+  --bg-user-msg: #0c1a22;
+  --bg-user-msg-border: #18d1ff;
+  --bg-assistant-msg: #0f1214;
+  --bg-assistant-msg-border: #161a1c;
+  --bg-avatar: #161a1c;
+  --bg-empty-action: #0f1214;
+  --bg-diff: #080a0b;
+  --bg-input: #080a0b;
+  --bg-button: #161a1c;
+  --bg-button-hover: #1e2326;
+  --bg-primary-button: #18d1ff;
+  --bg-primary-button-hover: #18d1ff;
+  --bg-secondary-button: #161a1c;
+  --bg-secondary-button-hover: #1e2326;
   --bg-error: #2d1518;
-  --bg-status-neutral: #1a1f29;
-  --bg-status-ok: #0d2e2a;
+  --bg-status-neutral: #161a1c;
+  --bg-status-ok: #141a08;
   --bg-status-warn: #2a2410;
   --bg-status-danger: #2d1518;
 
-  --border-default: #1a1f29;
-  --border-muted: #161b22;
-  --border-input: #1a1f29;
-  --border-input-focus: #2ec4b6;
+  --border-default: #161a1c;
+  --border-muted: #0c0e10;
+  --border-input: #161a1c;
+  --border-input-focus: #18d1ff;
   --border-error: #f85149;
-  --border-dashed: #1a1f29;
-  --border-empty-action: #1a1f29;
+  --border-dashed: #161a1c;
+  --border-empty-action: #161a1c;
 
   --text-primary: #c9d1d9;
-  --text-secondary: #7d8590;
+  --text-secondary: #8d9396;
   --text-muted: #6e7681;
-  --text-brand: #2ec4b6;
-  --text-link: #2ec4b6;
+  --text-brand: #18d1ff;
+  --text-link: #18d1ff;
   --text-error: #f85149;
-  --text-approve: #2ec4b6;
+  --text-approve: #c8eb21;
   --text-reject: #f85149;
 
-  --accent-primary: #2ec4b6;
-  --accent-success: #2ec4b6;
+  --accent-primary: #18d1ff;
+  --accent-success: #c8eb21;
   --accent-warning: #d29922;
   --accent-danger: #f85149;
-  --accent-brand: #2ec4b6;
-  --accent-soft: rgba(46, 196, 182, 0.12);
+  --accent-brand: #18d1ff;
+  --accent-soft: rgba(24, 209, 255, 0.12);
 
-  --shadow-subtle: 0 1px 4px rgba(0, 0, 0, 0.18);
-  --shadow-panel: 0 4px 16px rgba(0, 0, 0, 0.32);
-  --shadow-elevated: 0 8px 28px rgba(0, 0, 0, 0.42);
-  --shadow-focus: 0 0 0 2px rgba(46, 196, 182, 0.3);
+  --shadow-subtle: 0 1px 4px rgba(0, 0, 0, 0.22);
+  --shadow-panel: 0 4px 16px rgba(0, 0, 0, 0.36);
+  --shadow-elevated: 0 8px 28px rgba(0, 0, 0, 0.46);
+  --shadow-focus: 0 0 0 2px rgba(24, 209, 255, 0.3);
 
-  --scrollbar-thumb: rgba(125, 133, 144, 0.22);
-  --scrollbar-thumb-hover: rgba(125, 133, 144, 0.4);
+  --scrollbar-thumb: rgba(141, 147, 150, 0.22);
+  --scrollbar-thumb-hover: rgba(141, 147, 150, 0.4);
 }
 
 :root[data-theme="light"] {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f6f8fa;
-  --bg-tertiary: #eef0f3;
-  --bg-overlay: #ffffff;
-  --bg-hover: #eef4f2;
-  --bg-selected: #dff1ec;
-  --bg-selected-outline: #1f8f80;
-  --bg-user-msg: #dff1ec;
-  --bg-user-msg-border: #1f8f80;
-  --bg-assistant-msg: #ffffff;
-  --bg-assistant-msg-border: #d8dfdd;
-  --bg-avatar: #edf4f1;
-  --bg-empty-action: #f6f8fa;
-  --bg-diff: #f6f8fa;
-  --bg-input: #fbfcfa;
-  --bg-button: #eef2ef;
-  --bg-button-hover: #dfe8e4;
-  --bg-primary-button: #1f6f68;
-  --bg-primary-button-hover: #2e8a80;
-  --bg-secondary-button: #edf4f1;
-  --bg-secondary-button-hover: #dfe8e4;
+  --bg-primary: #f4f6f6;
+  --bg-secondary: #ebeded;
+  --bg-tertiary: #e2e4e4;
+  --bg-overlay: #f4f6f6;
+  --bg-hover: #e2e4e4;
+  --bg-selected: #d0eef5;
+  --bg-selected-outline: #18d1ff;
+  --bg-user-msg: #d0eef5;
+  --bg-user-msg-border: #18d1ff;
+  --bg-assistant-msg: #f4f6f6;
+  --bg-assistant-msg-border: #d0d4d4;
+  --bg-avatar: #e2e4e4;
+  --bg-empty-action: #ebeded;
+  --bg-diff: #ebeded;
+  --bg-input: #f0f2f2;
+  --bg-button: #e2e4e4;
+  --bg-button-hover: #d4d6d6;
+  --bg-primary-button: #18d1ff;
+  --bg-primary-button-hover: #3adbff;
+  --bg-secondary-button: #e2e4e4;
+  --bg-secondary-button-hover: #d4d6d6;
   --bg-error: #ffe4df;
-  --bg-status-neutral: #e9ece8;
-  --bg-status-ok: #d9f0e7;
+  --bg-status-neutral: #e2e4e4;
+  --bg-status-ok: #eef5d8;
   --bg-status-warn: #f9e7bc;
   --bg-status-danger: #ffdcd7;
 
-  --border-default: #d0d7de;
-  --border-muted: #e8ecf0;
-  --border-input: #cfd7d4;
-  --border-input-focus: #1f8f80;
+  --border-default: #c8cccc;
+  --border-muted: #d8dcdc;
+  --border-input: #c0c4c4;
+  --border-input-focus: #18d1ff;
   --border-error: #f2b8ad;
-  --border-dashed: #cbd3d0;
-  --border-empty-action: #9fcac0;
+  --border-dashed: #b8bcbc;
+  --border-empty-action: #18d1ff;
 
-  --text-primary: #1f2328;
-  --text-secondary: #656d76;
-  --text-muted: #7a8390;
-  --text-brand: #1f6f68;
-  --text-link: #0969da;
+  --text-primary: #191919;
+  --text-secondary: #555555;
+  --text-muted: #888888;
+  --text-brand: #0099bf;
+  --text-link: #0099bf;
   --text-error: #8f2525;
-  --text-approve: #106348;
+  --text-approve: #6b9a0f;
   --text-reject: #8f2525;
 
-  --accent-primary: #1f8f80;
-  --accent-success: #1f8f80;
+  --accent-primary: #18d1ff;
+  --accent-success: #c8eb21;
   --accent-warning: #9a6700;
   --accent-danger: #cf222e;
-  --accent-brand: #1f8f80;
-  --accent-soft: rgba(31, 143, 128, 0.1);
+  --accent-brand: #18d1ff;
+  --accent-soft: rgba(24, 209, 255, 0.1);
 
-  --shadow-subtle: 0 1px 4px rgba(26, 37, 38, 0.04);
-  --shadow-panel: 0 4px 16px rgba(26, 37, 38, 0.07);
-  --shadow-elevated: 0 8px 28px rgba(26, 37, 38, 0.12);
-  --shadow-focus: 0 0 0 2px rgba(31, 143, 128, 0.18);
+  --shadow-subtle: 0 1px 4px rgba(25, 25, 25, 0.05);
+  --shadow-panel: 0 4px 16px rgba(25, 25, 25, 0.08);
+  --shadow-elevated: 0 8px 28px rgba(25, 25, 25, 0.14);
+  --shadow-focus: 0 0 0 2px rgba(24, 209, 255, 0.2);
 
   --scrollbar-thumb: rgba(31, 35, 40, 0.18);
   --scrollbar-thumb-hover: rgba(31, 35, 40, 0.32);
@@ -236,13 +236,13 @@
 
 /* Background customization CSS variables */
 :root {
-  --bg-primary-rgb: 10, 14, 20;
-  --bg-secondary-rgb: 17, 21, 28;
+  --bg-primary-rgb: 8, 10, 11;
+  --bg-secondary-rgb: 15, 18, 20;
 }
 
 :root[data-theme="light"] {
-  --bg-primary-rgb: 255, 255, 255;
-  --bg-secondary-rgb: 246, 248, 250;
+  --bg-primary-rgb: 244, 246, 246;
+  --bg-secondary-rgb: 235, 237, 237;
 }
 
 * {
@@ -2006,8 +2006,15 @@ box-shadow: var(--shadow-subtle);
   left: 0;
   right: 0;
   bottom: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.browser-tab-pane > * {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* Terminal panels need no scroll and full height */
