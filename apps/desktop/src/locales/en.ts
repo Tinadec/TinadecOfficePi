@@ -877,6 +877,7 @@ export default {
 	},
 	accentColors: {
 		blue: "Blue",
+		ark: "Ark Signal Cyan",
 		green: "Green",
 		purple: "Purple",
 		orange: "Orange",

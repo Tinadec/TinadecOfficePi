@@ -65,6 +65,7 @@ async function toggleDropdown() {
   if (showDropdown.value) {
     await nextTick()
     updateDropdownPosition()
+    requestAnimationFrame(updateDropdownPosition)
   }
 }
 

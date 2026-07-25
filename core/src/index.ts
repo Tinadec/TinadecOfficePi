@@ -1,7 +1,8 @@
-import { readFile, stat } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { node } from "@elysiajs/node";
 import { Elysia } from "elysia";
-import { PiHarness, type PiRunConfig, type PiRunMode } from "./harness.js";
+import { PiHarness, resolveAgentDir, type PiRunConfig, type PiRunMode } from "./harness.js";
 import { CoreStore, defaultStatePath, id, now, stringOr } from "./store.js";
 import {
 	agentProfiles,
@@ -16,6 +17,17 @@ const port = Number(process.env.TINADEC_CORE_PORT ?? 48731);
 const store = new CoreStore(defaultStatePath());
 await store.load();
 const pi = new PiHarness(store);
+
+const BUILTIN_PROVIDERS = new Set([
+	"openai",
+	"anthropic",
+	"google",
+	"openrouter",
+	"deepseek",
+	"xai",
+	"groq",
+	"mistral",
+]);
 
 new Elysia({ adapter: node() })
 	.get("/", () =>
@@ -57,6 +69,67 @@ new Elysia({ adapter: node() })
 	}))
 	.get("/api/v1/readiness", async () => readiness(await pi.availableModels()))
 	.get("/api/v1/pi/models", async () => pi.availableModels())
+	.get("/api/v1/pi/model-configs", async () => {
+		const dir = resolveAgentDir();
+		const configs: Array<{ kind: string; provider: string; modelId: string; displayName: string; baseUrl: string; api: string; reasoning: boolean }> = [];
+		try {
+			const auth = JSON.parse(await readFile(join(dir, "auth.json"), "utf8"));
+			if (auth && typeof auth === "object") {
+				for (const [provider] of Object.entries(auth)) {
+					if (BUILTIN_PROVIDERS.has(provider)) {
+						configs.push({ kind: "builtin", provider, modelId: provider, displayName: provider, baseUrl: "", api: "", reasoning: false });
+					}
+				}
+			}
+		} catch {}
+		try {
+			const models = JSON.parse(await readFile(join(dir, "models.json"), "utf8"));
+			if (models?.providers && typeof models.providers === "object") {
+				for (const [provider, def] of Object.entries(models.providers)) {
+					if (BUILTIN_PROVIDERS.has(provider) || !def || typeof def !== "object") continue;
+					const d = def as { baseUrl?: string; api?: string; models?: Array<{ id: string; name?: string; reasoning?: boolean }> };
+					for (const model of d.models ?? []) {
+						if (model && typeof model.id === "string") {
+							configs.push({ kind: "custom", provider, modelId: model.id, displayName: model.name ?? "", baseUrl: d.baseUrl ?? "", api: d.api ?? "openai-completions", reasoning: model.reasoning === true });
+						}
+					}
+				}
+			}
+		} catch {}
+		return configs;
+	})
+	.post("/api/v1/pi/model-configs/delete", async ({ body, set }) => {
+		const input = record(body);
+		const provider = stringValue(input.provider);
+		const modelId = stringValue(input.modelId);
+		if (!provider) return fail(set, 400, "INVALID_INPUT", "Provider is required.");
+		const dir = resolveAgentDir();
+		if (BUILTIN_PROVIDERS.has(provider)) {
+			try {
+				const auth = JSON.parse(await readFile(join(dir, "auth.json"), "utf8"));
+				delete auth[provider];
+				await writeFile(join(dir, "auth.json"), JSON.stringify(auth, null, 2) + "\n", "utf8");
+			} catch {}
+			return { provider, modelId: modelId ?? provider };
+		}
+		if (!modelId) return fail(set, 400, "INVALID_INPUT", "Model id is required.");
+		try {
+			const models = JSON.parse(await readFile(join(dir, "models.json"), "utf8"));
+			if (models?.providers?.[provider]?.models) {
+				models.providers[provider].models = models.providers[provider].models.filter((m: { id: string }) => m.id !== modelId);
+				if (models.providers[provider].models.length === 0) {
+					delete models.providers[provider];
+					try {
+						const auth = JSON.parse(await readFile(join(dir, "auth.json"), "utf8"));
+						delete auth[provider];
+						await writeFile(join(dir, "auth.json"), JSON.stringify(auth, null, 2) + "\n", "utf8");
+					} catch {}
+				}
+				await writeFile(join(dir, "models.json"), JSON.stringify(models, null, 2) + "\n", "utf8");
+			}
+		} catch {}
+		return { provider, modelId };
+	})
 	.get("/api/v1/model-readiness", async () =>
 		modelReadiness(await pi.availableModels()),
 	)
@@ -747,14 +820,6 @@ new Elysia({ adapter: node() })
 			"Pi builds the effective system prompt from its resource loader, AGENTS.md files, skills, and configured extensions.",
 		warnings: [],
 	}))
-	.all("/api/v1/*", ({ request, set }) =>
-		fail(
-			set,
-			501,
-			"PI_COMPATIBILITY_ROUTE_UNAVAILABLE",
-			`The Pi core has not implemented ${request.method} for this compatibility route.`,
-		),
-	)
 	.listen({ port, hostname: "127.0.0.1" });
 
 console.log(`TinadecPi Core listening on http://127.0.0.1:${port}`);

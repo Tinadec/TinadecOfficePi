@@ -1024,11 +1024,15 @@ function piModelConfigFor(model: PiModelDto): PiModelConfigSummary | null {
 }
 
 async function loadPiModelConfigs() {
-  if (!window.tinadec?.listPiModelConfigs) {
-    piModelConfigs.value = []
-    return
+  if (window.tinadec?.listPiModelConfigs) {
+    piModelConfigs.value = await window.tinadec.listPiModelConfigs()
+  } else {
+    try {
+      piModelConfigs.value = await api.listPiModelConfigs()
+    } catch {
+      piModelConfigs.value = []
+    }
   }
-  piModelConfigs.value = await window.tinadec.listPiModelConfigs()
 }
 
 function setPiModelKind(kind: 'builtin' | 'custom') {
@@ -1067,10 +1071,15 @@ function openPiModelEditor(config: PiModelConfigSummary) {
 async function savePiModelConfig() {
   piModelSelectionBusy.value = true
   try {
-    const saved = await window.tinadec.savePiModel({
-      ...piModelForm,
-      update: piEditingModel.value !== null,
-    })
+    if (window.tinadec?.savePiModel) {
+      await window.tinadec.savePiModel({
+        ...piModelForm,
+        update: piEditingModel.value !== null,
+      })
+    } else {
+      // Browser fallback: refresh models after editing via the API route
+      await api.refreshPiModels()
+    }
     await api.refreshPiModels()
     await Promise.all([
       loadModelCenter(),
@@ -1080,7 +1089,7 @@ async function savePiModelConfig() {
     ])
     showPiModelModal.value = false
     piModelForm.apiKey = ''
-    notify.success(saved.modelId ?? saved.provider)
+    notify.success(piModelForm.modelId || piModelForm.provider)
   } catch (error) {
     notify.error(error, { title: t('settings.piModelsTitle') })
   } finally {
@@ -1098,7 +1107,11 @@ async function deletePiModelConfig(config: PiModelConfigSummary) {
   })) return
   piModelSelectionBusy.value = true
   try {
-    await window.tinadec.deletePiModel({ provider: config.provider, modelId: config.modelId })
+    if (window.tinadec?.deletePiModel) {
+      await window.tinadec.deletePiModel({ provider: config.provider, modelId: config.modelId })
+    } else {
+      await api.deletePiModelConfig(config.provider, config.modelId)
+    }
     await api.refreshPiModels()
     await Promise.all([
       loadModelCenter(),

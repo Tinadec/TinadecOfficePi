@@ -10,13 +10,14 @@
       // 逻辑与 useTheme.ts 的 applyTheme/applyAccentColor 一致；main.ts 执行后会幂等覆盖。
       (function () {
         var theme = localStorage.getItem('tinadec-theme') || 'dark';
-        var accent = localStorage.getItem('tinadec-accent-color') || 'blue';
+        var accent = localStorage.getItem('tinadec-accent-color') || 'ark';
         if (theme === 'system') {
           theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
         }
         document.documentElement.setAttribute('data-theme', theme);
         // accentBrand 颜色映射（与 useTheme.ts ACCENT_COLORS 一致）
         var brandColors = {
+          ark:    { dark: '#18d1ff', light: '#18d1ff' },
           blue:   { dark: '#58a6ff', light: '#1f6feb' },
           green:  { dark: '#3fb950', light: '#1a7f37' },
           purple: { dark: '#bc8cff', light: '#8250df' },
@@ -47,10 +48,10 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: #0a0e14; /* 暗色默认；亮色由下方属性选择器覆盖 */
+        background: #080a0b; /* Ark ink — 暗色默认 */
       }
       :root[data-theme="light"] .splash-placeholder {
-        background: #ffffff;
+        background: #f4f6f6;
       }
       /* 子窗口由 BrowserWindow 背景承接首帧，不重播主窗口 splash。 */
       :root[data-skip-splash] .splash-placeholder {
@@ -59,7 +60,7 @@
       .splash-placeholder svg {
         height: var(--splash-logo-height);
         width: auto;
-        color: var(--accent-brand, #2ec4b6); /* 跟随主题强调色，fallback 为青色 */
+        color: var(--accent-brand, #18d1ff); /* 跟随主题强调色，fallback 为 Ark signal cyan */
       }
     </style>
   </head>

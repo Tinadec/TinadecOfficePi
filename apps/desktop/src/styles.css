@@ -3491,6 +3491,7 @@ transition: left 0.2s ease, right 0.2s ease;
 }
 
 .mode-selector-portal {
+  position: fixed;
   z-index: 9999;
   display: flex;
   flex-direction: column;
@@ -3558,6 +3559,7 @@ transition: left 0.2s ease, right 0.2s ease;
 }
 
 .permission-selector-portal {
+  position: fixed;
   z-index: 9999;
   display: flex;
   flex-direction: column;

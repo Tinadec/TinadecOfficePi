@@ -24,6 +24,24 @@ export interface AccentColor {
 
 export const ACCENT_COLORS: AccentColor[] = [
   {
+    key: 'ark',
+    labelKey: 'accentColors.ark',
+    dark: {
+      accentPrimary: '#18d1ff',
+      accentBrand: '#18d1ff',
+      textBrand: '#18d1ff',
+      borderInputFocus: '#18d1ff',
+      shadowFocus: '0 0 0 3px rgba(24, 209, 255, 0.3)',
+    },
+    light: {
+      accentPrimary: '#18d1ff',
+      accentBrand: '#18d1ff',
+      textBrand: '#0099bf',
+      borderInputFocus: '#18d1ff',
+      shadowFocus: '0 0 0 3px rgba(24, 209, 255, 0.2)',
+    },
+  },
+  {
     key: 'blue',
     labelKey: 'accentColors.blue',
     dark: {
@@ -182,7 +200,7 @@ function getStoredTheme(): Ref<Theme> {
 
 function getStoredAccentColor(): Ref<string> {
   if (!storedAccentColor) {
-    storedAccentColor = useStorage<string>('tinadec-accent-color', 'blue')
+    storedAccentColor = useStorage<string>('tinadec-accent-color', 'ark')
   }
   return storedAccentColor
 }

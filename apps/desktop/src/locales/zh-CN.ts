@@ -837,6 +837,7 @@ export default {
 	},
 	accentColors: {
 		blue: "蓝色",
+		ark: "Ark 信号青",
 		green: "绿色",
 		purple: "紫色",
 		orange: "橙色",

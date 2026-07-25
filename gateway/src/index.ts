@@ -245,6 +245,19 @@ new Elysia({ adapter: node() })
 		setStatus(set, result.status);
 		return result.data;
 	})
+	.get("/api/v1/pi/model-configs", async ({ set }) => {
+		const result = await proxyJson("/api/v1/pi/model-configs");
+		setStatus(set, result.status);
+		return result.data;
+	})
+	.post("/api/v1/pi/model-configs/delete", async ({ body, set }) => {
+		const result = await proxyJson("/api/v1/pi/model-configs/delete", {
+			method: "POST",
+			body: body as Record<string, unknown>,
+		});
+		setStatus(set, result.status);
+		return result.data;
+	})
 	.put(
 		"/api/v1/sessions/:sessionId/pi/model",
 		async ({ params, body, set }) => {
