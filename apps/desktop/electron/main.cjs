@@ -1,3 +1,4 @@
+require("./winhide.cjs");
 const {
 	app,
 	BrowserWindow,

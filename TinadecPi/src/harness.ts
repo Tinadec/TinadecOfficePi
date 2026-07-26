@@ -1191,9 +1191,7 @@ function toolResultText(value: unknown): string {
 					(part): part is Record<string, unknown> =>
 						!!part && typeof part === "object",
 				)
-				.filter(
-					(part) => part.type === "text" && typeof part.text === "string",
-				)
+				.filter((part) => part.type === "text" && typeof part.text === "string")
 				.map((part) => part.text as string)
 				.join("\n")
 				.trim();
