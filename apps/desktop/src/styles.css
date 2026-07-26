@@ -32,8 +32,8 @@
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover: 0 4% 93%;
+    --popover-foreground: 0 0% 10%;
     --primary: 222.2 47.4% 11.2%;
     --primary-foreground: 210 40% 98%;
     --secondary: 210 40% 96.1%;
@@ -56,8 +56,8 @@
     --foreground: 210 40% 98%;
     --card: 222.2 84% 4.9%;
     --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 210 14% 7%;
+    --popover-foreground: 213 14% 82%;
     --primary: 210 40% 98%;
     --primary-foreground: 222.2 47.4% 11.2%;
     --secondary: 217.2 32.6% 17.5%;
@@ -132,7 +132,7 @@
   --bg-button: #161a1c;
   --bg-button-hover: #1e2326;
   --bg-primary-button: #18d1ff;
-  --bg-primary-button-hover: #18d1ff;
+  --bg-primary-button-hover: #3adbff;
   --bg-secondary-button: #161a1c;
   --bg-secondary-button-hover: #1e2326;
   --bg-error: #2d1518;
@@ -1630,8 +1630,7 @@ box-shadow: var(--shadow-subtle);
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   background: var(--bg-secondary);
 }
 
@@ -2007,14 +2006,11 @@ box-shadow: var(--shadow-subtle);
   left: 0;
   right: 0;
   bottom: 0;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .browser-tab-pane > * {
-  flex: 1 1 auto;
   min-height: 0;
 }
 
@@ -3497,10 +3493,13 @@ transition: left 0.2s ease, right 0.2s ease;
   display: flex;
   flex-direction: column;
   overscroll-behavior: contain;
-  border-radius: 10px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-muted);
-  box-shadow: var(--shadow-panel);
+  overflow-y: auto;
+  /* Ark contract: square geometry, 1px rule, ink panel (portals live on body,
+     outside .shell scope, so bake the Ark look into the base class). */
+  border-radius: 0;
+  background: rgb(15 19 21 / 0.98);
+  border: 1px solid rgb(225 239 240 / 0.18);
+  box-shadow: none;
   padding: 4px;
 }
 
@@ -3514,7 +3513,7 @@ transition: left 0.2s ease, right 0.2s ease;
   color: var(--text-primary);
   background: transparent;
   border: none;
-  border-radius: 6px;
+  border-radius: 0;
   cursor: pointer;
   text-align: left;
   transition: background 0.1s;
@@ -3565,10 +3564,11 @@ transition: left 0.2s ease, right 0.2s ease;
   display: flex;
   flex-direction: column;
   overscroll-behavior: contain;
-  border-radius: 10px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-muted);
-  box-shadow: var(--shadow-panel);
+  overflow-y: auto;
+  border-radius: 0;
+  background: rgb(15 19 21 / 0.98);
+  border: 1px solid rgb(225 239 240 / 0.18);
+  box-shadow: none;
   padding: 4px;
 }
 
@@ -3582,7 +3582,7 @@ transition: left 0.2s ease, right 0.2s ease;
   color: var(--text-primary);
   background: transparent;
   border: none;
-  border-radius: 6px;
+  border-radius: 0;
   cursor: pointer;
   text-align: left;
   transition: background 0.1s;
@@ -3656,7 +3656,8 @@ input:focus {
 .primary-button {
   align-self: end;
   padding: 0 16px;
-  color: #ffffff;
+  /* Ark: dark ink text on signal-cyan fill for readable contrast */
+  color: #061014;
   background: var(--bg-primary-button);
   font-weight: 600;
 }

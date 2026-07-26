@@ -40,7 +40,7 @@ describe('local pet window shell', () => {
     expect(mainProcess).toContain('scheme: "tinadec-pet-preview"')
     expect(mainProcess).toContain('protocol.handle("tinadec-pet-preview"')
     expect(petStore).toContain('await fs.rename(temporary, destination)')
-    expect(router).toContain("path: '/pet'")
+    expect(router.replace(/"/g, "'")).toContain("path: '/pet'")
     expect(app).toContain("const isPetWindow = window.location.hash.startsWith('#/pet')")
     expect(app).toContain('if (!isPetWindow && !isChildWindow) startConnection()')
     expect(desktopPetPage).toContain('background: transparent !important')

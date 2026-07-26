@@ -39,24 +39,26 @@ const currentMode = computed(() => modes.value.find(m => m.key === props.modelVa
 
 function updateDropdownPosition() {
   const trigger = triggerRef.value
-  if (!trigger) return
+  const menu = dropdownRef.value
+  if (!trigger || !menu) return
   const rect = trigger.getBoundingClientRect()
+  const gap = 6
   const margin = 8
+  const naturalHeight = menu.scrollHeight || menu.offsetHeight || 240
+  const menuWidth = menu.offsetWidth || 180
   const spaceAbove = rect.top - margin
   const spaceBelow = window.innerHeight - rect.bottom - margin
-  const menuHeight = Math.min(dropdownRef.value?.scrollHeight ?? 300, 320)
-  // Composer sits low: prefer above, flip down only if above cannot fit.
   const above = spaceAbove >= 96 || spaceBelow < 96
-  const maxHeight = Math.max(96, Math.min(menuHeight, above ? spaceAbove : spaceBelow))
+  const cap = Math.min(above ? spaceAbove : spaceBelow, 360)
+  const effectiveHeight = Math.min(naturalHeight, cap)
   dropdownStyle.value = {
     position: 'fixed',
     top: `${above
-      ? Math.max(margin, rect.top - maxHeight - 6)
-      : Math.min(window.innerHeight - margin - maxHeight, rect.bottom + 6)}px`,
-    left: `${Math.max(margin, Math.min(rect.left, window.innerWidth - 188))}px`,
-    minWidth: '180px',
-    maxHeight: `${maxHeight}px`,
-    overflowY: 'auto',
+      ? Math.max(margin, rect.top - gap - effectiveHeight)
+      : Math.min(window.innerHeight - margin - effectiveHeight, rect.bottom + gap)}px`,
+    left: `${Math.max(margin, Math.min(rect.left, window.innerWidth - menuWidth - margin))}px`,
+    width: `${Math.min(menuWidth, window.innerWidth - margin * 2)}px`,
+    maxHeight: `${cap}px`,
   }
 }
 

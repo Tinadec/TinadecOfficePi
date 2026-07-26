@@ -32,7 +32,7 @@ function projectRoot() {
 function piModelPaths(root = projectRoot()) {
 	const agentDir =
 		process.env.TINADEC_PI_AGENT_DIR ??
-		path.join(root, "core", ".tinadec-pi", "pi-agent");
+		path.join(root, "TinadecPi", ".tinadec-pi", "pi-agent");
 	return {
 		agentDir,
 		authPath: path.join(agentDir, "auth.json"),
@@ -74,7 +74,13 @@ function customProviderId(value) {
 }
 
 function normalizeBaseUrl(value) {
-	const url = new URL(requiredString(value, "Base URL"));
+	const raw = requiredString(value, "Base URL");
+	let url;
+	try {
+		url = new URL(raw);
+	} catch {
+		throw new Error("Base URL is not a valid URL.");
+	}
 	if (!["http:", "https:"].includes(url.protocol)) {
 		throw new Error("Base URL must use HTTP or HTTPS.");
 	}

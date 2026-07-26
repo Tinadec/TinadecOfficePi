@@ -163,6 +163,7 @@ export function useAgentActivity(
 	let eventSource: EventSource | null = null;
 	let cleanupTimer: ReturnType<typeof setTimeout> | null = null;
 	let lastRunStartedAt: string | null = null;
+	let processedSeqs = new Set<number>();
 
 	function reset() {
 		activity.value = { ...DEFAULT_ACTIVITY };
@@ -171,6 +172,7 @@ export function useAgentActivity(
 		agentStates.value = {};
 		progressEvents.value = [];
 		lastRunStartedAt = null;
+		processedSeqs = new Set();
 		if (cleanupTimer) {
 			clearTimeout(cleanupTimer);
 			cleanupTimer = null;
@@ -625,6 +627,11 @@ export function useAgentActivity(
 	}
 
 	function processEvent(event: EventEnvelope) {
+		// SSE reconnects replay the event history; drop already-processed events.
+		if (typeof event.seq === "number") {
+			if (processedSeqs.has(event.seq)) return;
+			processedSeqs.add(event.seq);
+		}
 		switch (event.type) {
 			case "run.started":
 				processRunStarted(event);

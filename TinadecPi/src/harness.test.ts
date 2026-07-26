@@ -14,11 +14,11 @@ import {
 
 test("resolveAgentDir stays inside the project unless explicitly configured", () => {
 	assert.equal(
-		resolveAgentDir(undefined, "D:/work/TinadecPi/core"),
-		join("D:/work/TinadecPi/core", ".tinadec-pi", "pi-agent"),
+		resolveAgentDir(undefined, "D:/work/TinadecPi/TinadecPi"),
+		join("D:/work/TinadecPi/TinadecPi", ".tinadec-pi", "pi-agent"),
 	);
 	assert.equal(
-		resolveAgentDir("D:/isolated/pi", "D:/work/TinadecPi/core"),
+		resolveAgentDir("D:/isolated/pi", "D:/work/TinadecPi/TinadecPi"),
 		"D:/isolated/pi",
 	);
 	assert.equal(
@@ -28,7 +28,7 @@ test("resolveAgentDir stays inside the project unless explicitly configured", ()
 });
 
 test("only resumes Pi sessions from the isolated agent directory", () => {
-	const agentDir = "D:/work/TinadecPi/core/.tinadec-pi/pi-agent";
+	const agentDir = "D:/work/TinadecPi/TinadecPi/.tinadec-pi/pi-agent";
 	assert.equal(
 		isIsolatedSessionFile(`${agentDir}/sessions/current.jsonl`, agentDir),
 		true,

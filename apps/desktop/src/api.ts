@@ -1137,7 +1137,7 @@ export const api = {
 	listPiModelConfigs: () =>
 		request<
 			Array<{
-				kind: string;
+				kind: "builtin" | "custom";
 				provider: string;
 				modelId: string;
 				displayName: string;

@@ -5,7 +5,7 @@
   "license": "GPL-3.0-or-later",
   "workspaces": [
     "apps/*",
-    "core",
+    "TinadecPi",
     "gateway"
   ],
   "scripts": {

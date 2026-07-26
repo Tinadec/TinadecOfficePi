@@ -7,7 +7,7 @@ TinadecPi is a Windows-first agent desktop workbench with three layers:
 - `apps/desktop/`: Electron/Vue UI on port `5173`. It calls Gateway only.
 - `gateway/`: Elysia BFF on port `48730`. It preserves the public REST/SSE
   contract and owns no durable agent state.
-- `core/`: Elysia service on port `48731`. It embeds
+- `TinadecPi/`: Elysia service on port `48731`. It embeds
   `@earendil-works/pi-coding-agent` in-process and owns Tinadec metadata.
 
 `TinadecTools/` remains for the Gateway Code-tool bridge. It is independent
@@ -15,12 +15,12 @@ from the removed C# Core and model-routing shell.
 
 ## Pi Runtime Rules
 
-- Use the Pi SDK directly in `core/src/harness.ts`; do not spawn Pi RPC
+- Use the Pi SDK directly in `TinadecPi/src/harness.ts`; do not spawn Pi RPC
   subprocesses from Node.
 - `ModelRuntime`, credentials, custom models, session trees, compaction,
   retries, skills, extensions, and tool execution remain Pi-owned.
 - `pi-subagents` provides chains, parallel delegation, reviews, worktrees,
-  and child-agent lifecycle. Do not rebuild an orchestrator in `core/`.
+  and child-agent lifecycle. Do not rebuild an orchestrator in `TinadecPi/`.
 - Pi resources can execute code. Do not add HTTP routes that install packages,
   upload extensions, or accept provider secrets. Use `pi install`,
   `pi /login`, Pi settings, and trusted project `.pi` resources instead.

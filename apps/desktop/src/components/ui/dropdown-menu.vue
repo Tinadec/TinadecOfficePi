@@ -38,7 +38,7 @@ function updatePosition() {
   const above = preferAbove
     ? spaceAbove >= 96 || spaceBelow < 96
     : spaceBelow < 96 && spaceAbove > spaceBelow
-  const maxHeight = Math.max(96, Math.min(naturalHeight, above ? spaceAbove : spaceBelow, 360))
+  const maxHeight = Math.max(96, Math.min(naturalHeight, above ? spaceAbove : spaceBelow, 240))
 
   menuStyle.value = {
     position: 'fixed',
@@ -101,7 +101,7 @@ onUnmounted(() => {
       v-if="isOpen"
       ref="menuRef"
       :class="cn(
-        'fixed z-[10000] min-w-[8rem] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md',
+        'fixed z-[10000] min-w-[8rem] max-w-[calc(100vw-1rem)] overflow-y-auto border p-1',
         props.class,
       )"
       :style="menuStyle"

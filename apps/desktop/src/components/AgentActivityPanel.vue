@@ -302,8 +302,11 @@ const visibleProgressEvents = computed(() => [...props.progressEvents].slice(-15
               </div>
             </div>
 
-            <!-- Waiting for assignment -->
-            <div v-if="planningAgents.length === 0 && executionAgents.length === 0" class="agent-panel-waiting">
+            <!-- Waiting for assignment (only meaningful while a run is live) -->
+            <div
+              v-if="planningAgents.length === 0 && executionAgents.length === 0 && (activity.status === 'thinking' || activity.status === 'working')"
+              class="agent-panel-waiting"
+            >
               <Loader2 :size="12" class="agent-icon-spin" />
               <span>{{ t('agent.waitingAssignment') }}</span>
             </div>
@@ -458,9 +461,6 @@ const visibleProgressEvents = computed(() => [...props.progressEvents].slice(-15
   gap: 8px;
   padding: 10px;
   box-sizing: border-box;
-  height: 100%;
-  min-height: 0;
-  overflow-y: auto;
   overscroll-behavior: contain;
 }
 
@@ -1157,7 +1157,7 @@ const visibleProgressEvents = computed(() => [...props.progressEvents].slice(-15
 }
 
 .agent-panel-section-body {
-  max-height: 264px;
+  max-height: 400px;
   overflow: auto;
   overscroll-behavior: contain;
 }
