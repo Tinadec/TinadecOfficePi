@@ -38,16 +38,18 @@ function updatePosition() {
   const above = preferAbove
     ? spaceAbove >= 96 || spaceBelow < 96
     : spaceBelow < 96 && spaceAbove > spaceBelow
-  const maxHeight = Math.max(96, Math.min(naturalHeight, above ? spaceAbove : spaceBelow, 240))
+  const cap = Math.min(above ? spaceAbove : spaceBelow, 240)
+  // Position with the real rendered height so short menus hug the trigger.
+  const effectiveHeight = Math.min(naturalHeight, cap)
 
   menuStyle.value = {
     position: 'fixed',
     top: `${above
-      ? Math.max(margin, rect.top - gap - maxHeight)
-      : Math.min(window.innerHeight - margin - maxHeight, rect.bottom + gap)}px`,
+      ? Math.max(margin, rect.top - gap - effectiveHeight)
+      : Math.min(window.innerHeight - margin - effectiveHeight, rect.bottom + gap)}px`,
     left: `${Math.max(margin, Math.min(rect.left, window.innerWidth - menuWidth - margin))}px`,
     width: `${Math.min(menuWidth, window.innerWidth - margin * 2)}px`,
-    maxHeight: `${maxHeight}px`,
+    maxHeight: `${cap}px`,
   }
 }
 

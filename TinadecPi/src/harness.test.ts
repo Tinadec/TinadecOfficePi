@@ -68,10 +68,7 @@ test("each Pi run mode produces a distinct execution contract", () => {
 		promptForMode("ship it", "pair"),
 		/exactly two parallel, read-only tasks/,
 	);
-	assert.match(
-		promptForMode("ship it", "space"),
-		/space\.full_duplex/,
-	);
+	assert.match(promptForMode("ship it", "space"), /space\.full_duplex/);
 });
 
 test("subagentNames recognizes every supported delegation shape", () => {
@@ -79,10 +76,7 @@ test("subagentNames recognizes every supported delegation shape", () => {
 		subagentNames({
 			agent: "meeting",
 			tasks: [{ agent: "planner" }],
-			chain: [
-				{ agent: "worker" },
-				{ parallel: [{ agent: "supervisor" }] },
-			],
+			chain: [{ agent: "worker" }, { parallel: [{ agent: "supervisor" }] }],
 		}),
 		["meeting", "planner", "worker", "supervisor"],
 	);
