@@ -1077,8 +1077,19 @@ async function savePiModelConfig() {
         update: piEditingModel.value !== null,
       })
     } else {
-      // Browser fallback: refresh models after editing via the API route
-      await api.refreshPiModels()
+      // Browser fallback: persist through the localhost Core API.
+      await api.savePiModelConfig({
+        kind: piModelForm.kind,
+        provider: piModelForm.provider,
+        apiKey: piModelForm.apiKey || undefined,
+        baseUrl: piModelForm.baseUrl || undefined,
+        modelId: piModelForm.modelId || undefined,
+        previousModelId: piModelForm.previousModelId || undefined,
+        displayName: piModelForm.displayName || undefined,
+        api: piModelForm.api || undefined,
+        reasoning: piModelForm.reasoning,
+        update: piEditingModel.value !== null,
+      })
     }
     await api.refreshPiModels()
     await Promise.all([

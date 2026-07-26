@@ -1,4 +1,4 @@
-import { readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { node } from "@elysiajs/node";
 import { Elysia } from "elysia";
@@ -33,6 +33,33 @@ const BUILTIN_PROVIDERS = new Set([
 	"groq",
 	"mistral",
 ]);
+
+const CUSTOM_APIS = new Set([
+	"openai-completions",
+	"openai-responses",
+	"anthropic-messages",
+	"google-generative-ai",
+]);
+
+async function writeJsonAtomic(file: string, value: unknown): Promise<void> {
+	const temp = `${file}.${process.pid}.${Date.now()}.tmp`;
+	await writeFile(temp, `${JSON.stringify(value, null, 2)}\n`, {
+		encoding: "utf8",
+		mode: 0o600,
+	});
+	await rename(temp, file);
+}
+
+async function readJsonOr(file: string): Promise<Record<string, unknown>> {
+	try {
+		const value = JSON.parse(await readFile(file, "utf8"));
+		return value && typeof value === "object" && !Array.isArray(value)
+			? (value as Record<string, unknown>)
+			: {};
+	} catch {
+		return {};
+	}
+}
 
 new Elysia({ adapter: node() })
 	.get("/", () =>
@@ -102,7 +129,9 @@ new Elysia({ adapter: node() })
 					}
 				}
 			}
-		} catch {}
+		} catch {
+			// Missing or malformed isolated config file: treat as empty.
+		}
 		try {
 			const models = JSON.parse(
 				await readFile(join(dir, "models.json"), "utf8"),
@@ -135,8 +164,117 @@ new Elysia({ adapter: node() })
 					}
 				}
 			}
-		} catch {}
+		} catch {
+			// Missing or malformed isolated config file: treat as empty.
+		}
 		return configs;
+	})
+	.post("/api/v1/pi/model-configs", async ({ body, set }) => {
+		// Browser-facing save path for the isolated Pi model config. Localhost-only
+		// service; the key is written to the isolated auth.json and never echoed.
+		const input = record(body);
+		const kind = stringValue(input.kind) === "custom" ? "custom" : "builtin";
+		const rawProvider = (stringValue(input.provider) ?? "").trim().toLowerCase();
+		if (!rawProvider)
+			return fail(set, 400, "INVALID_INPUT", "Provider is required.");
+		if (kind === "builtin" && !BUILTIN_PROVIDERS.has(rawProvider))
+			return fail(set, 400, "INVALID_INPUT", "Unsupported Pi provider.");
+		if (kind === "custom" && !/^[a-z0-9][a-z0-9-]*$/.test(rawProvider))
+			return fail(
+				set,
+				400,
+				"INVALID_INPUT",
+				"Provider id may contain only lowercase letters, numbers, and hyphens.",
+			);
+		const apiKey = (stringValue(input.apiKey) ?? "").trim();
+		const isUpdate = input.update === true;
+		const dir = resolveAgentDir();
+		await mkdir(dir, { recursive: true, mode: 0o700 });
+		const authPath = join(dir, "auth.json");
+		const auth = await readJsonOr(authPath);
+		if (apiKey) {
+			if (apiKey.length > 4096)
+				return fail(set, 400, "INVALID_INPUT", "API key is invalid.");
+			auth[rawProvider] = { type: "api_key", key: apiKey };
+			await writeJsonAtomic(authPath, auth);
+		} else if (!isUpdate) {
+			return fail(
+				set,
+				400,
+				"INVALID_INPUT",
+				"API key is required when adding a model.",
+			);
+		} else if (!auth[rawProvider]) {
+			return fail(
+				set,
+				400,
+				"INVALID_INPUT",
+				"Enter an API key for this provider.",
+			);
+		}
+		let savedModelId: string | null = null;
+		if (kind === "custom") {
+			const modelId = (stringValue(input.modelId) ?? "").trim();
+			if (!modelId || modelId.length > 200)
+				return fail(set, 400, "INVALID_INPUT", "Model id is required.");
+			const baseUrlRaw = (stringValue(input.baseUrl) ?? "").trim();
+			let baseUrl: string;
+			try {
+				const url = new URL(baseUrlRaw);
+				if (!["http:", "https:"].includes(url.protocol)) throw new Error();
+				baseUrl = url.toString().replace(/\/$/, "");
+			} catch {
+				return fail(
+					set,
+					400,
+					"INVALID_INPUT",
+					"Base URL must be a valid HTTP or HTTPS URL.",
+				);
+			}
+			const api = CUSTOM_APIS.has(stringValue(input.api) ?? "")
+				? (stringValue(input.api) as string)
+				: "openai-completions";
+			const modelsPath = join(dir, "models.json");
+			const config = await readJsonOr(modelsPath);
+			const providers =
+				config.providers &&
+				typeof config.providers === "object" &&
+				!Array.isArray(config.providers)
+					? (config.providers as Record<string, unknown>)
+					: {};
+			const existing =
+				providers[rawProvider] &&
+				typeof providers[rawProvider] === "object" &&
+				!Array.isArray(providers[rawProvider])
+					? (providers[rawProvider] as Record<string, unknown>)
+					: {};
+			const previousModelId = (stringValue(input.previousModelId) ?? "").trim();
+			const replacedIds = new Set(
+				[modelId, previousModelId].filter(Boolean),
+			);
+			const existingModels = Array.isArray(existing.models)
+				? (existing.models as Array<Record<string, unknown>>)
+				: [];
+			const previous = existingModels.find(
+				(m) => m?.id === (previousModelId || modelId),
+			);
+			const models = existingModels.filter(
+				(m) => !replacedIds.has(String(m?.id ?? "")),
+			);
+			const displayName = (stringValue(input.displayName) ?? "").trim();
+			models.push({
+				id: modelId,
+				...(displayName ? { name: displayName.slice(0, 100) } : {}),
+				reasoning:
+					typeof input.reasoning === "boolean"
+						? input.reasoning
+						: previous?.reasoning === true,
+			});
+			providers[rawProvider] = { ...existing, baseUrl, api, models };
+			await writeJsonAtomic(modelsPath, { ...config, providers });
+			savedModelId = modelId;
+		}
+		return { provider: rawProvider, modelId: savedModelId };
 	})
 	.post("/api/v1/pi/model-configs/delete", async ({ body, set }) => {
 		const input = record(body);
@@ -154,7 +292,9 @@ new Elysia({ adapter: node() })
 					JSON.stringify(auth, null, 2) + "\n",
 					"utf8",
 				);
-			} catch {}
+			} catch {
+			// Missing or malformed isolated config file: treat as empty.
+		}
 			return { provider, modelId: modelId ?? provider };
 		}
 		if (!modelId)
@@ -179,7 +319,9 @@ new Elysia({ adapter: node() })
 							JSON.stringify(auth, null, 2) + "\n",
 							"utf8",
 						);
-					} catch {}
+					} catch {
+			// Missing or malformed isolated config file: treat as empty.
+		}
 				}
 				await writeFile(
 					join(dir, "models.json"),
@@ -187,7 +329,9 @@ new Elysia({ adapter: node() })
 					"utf8",
 				);
 			}
-		} catch {}
+		} catch {
+			// Missing or malformed isolated config file: treat as empty.
+		}
 		return { provider, modelId };
 	})
 	.get("/api/v1/model-readiness", async () =>

@@ -1146,6 +1146,25 @@ export const api = {
 				reasoning: boolean;
 			}>
 		>("/api/v1/pi/model-configs"),
+	savePiModelConfig: (input: {
+		kind: "builtin" | "custom";
+		provider: string;
+		apiKey?: string;
+		baseUrl?: string;
+		modelId?: string;
+		previousModelId?: string;
+		displayName?: string;
+		api?: string;
+		reasoning?: boolean;
+		update?: boolean;
+	}) =>
+		request<{ provider: string; modelId: string | null }>(
+			"/api/v1/pi/model-configs",
+			{
+				method: "POST",
+				body: JSON.stringify(input),
+			},
+		),
 	deletePiModelConfig: (provider: string, modelId: string) =>
 		request<{ provider: string; modelId: string }>(
 			"/api/v1/pi/model-configs/delete",

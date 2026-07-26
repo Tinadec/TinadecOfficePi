@@ -109,7 +109,7 @@ function getAvailableShells() {
 
     // WSL (if available)
     try {
-      const wslCheck = childProcess.execSync('wsl --list --quiet', { encoding: 'utf-8', timeout: 3000 });
+      const wslCheck = childProcess.execSync('wsl --list --quiet', { encoding: 'utf-8', timeout: 3000, windowsHide: true });
       if (wslCheck.trim()) {
         shells.push({ id: 'wsl', label: 'WSL (Ubuntu)', shell: 'wsl.exe', args: [] });
       }
@@ -268,7 +268,7 @@ function createSpawnFallback(entry, shell, args, cwd, cols, rows, env) {
     cwd,
     env,
     stdio: ['pipe', 'pipe', 'pipe'],
-    windowsHide: false,
+    windowsHide: true,
     shell: false,
   });
 
