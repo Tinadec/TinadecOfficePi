@@ -6,6 +6,7 @@ import WelcomeScreen from './WelcomeScreen.vue'
 import { useChatResponsiveMode } from '@/composables/useElementSize'
 import type { MessageDto, SessionDto, ProjectDto, OrchestrationSnapshotDto, PiArtifactDto, PiModelDto, PiThinkingLevel } from '../api'
 import type { AgentMode, PermissionLevel } from '@/types/mode'
+import type { ThinkingStep, ToolCall } from '@/composables/useAgentActivity'
 
 const props = defineProps<{
   messages: MessageDto[]
@@ -22,6 +23,9 @@ const props = defineProps<{
   orchestration: OrchestrationSnapshotDto | null
   artifactsByRun?: Record<string, PiArtifactDto[]>
   streamingStatus?: string
+  activityRunning?: boolean
+  activityThinkingSteps?: ThinkingStep[]
+  activityToolCalls?: ToolCall[]
   busy: boolean
   isRunning?: boolean
   draft: string
@@ -40,6 +44,7 @@ const emit = defineEmits<{
   'download-artifact': [artifact: PiArtifactDto]
   'continue-artifact': [artifact: PiArtifactDto]
   'send': []
+  'abort': []
   'welcome-send': [content: string]
   'create-project': []
   'select-project': [id: string]
@@ -97,6 +102,9 @@ function handleReject(approvalId: string) {
             :messages="messages"
             :artifacts-by-run="artifactsByRun ?? {}"
             :streaming-status="streamingStatus"
+            :activity-running="activityRunning ?? false"
+            :activity-thinking-steps="activityThinkingSteps ?? []"
+            :activity-tool-calls="activityToolCalls ?? []"
             @download-artifact="emit('download-artifact', $event)"
             @continue-artifact="emit('continue-artifact', $event)"
             @approve="handleApprove"
@@ -119,6 +127,7 @@ function handleReject(approvalId: string) {
             @select-model="emit('select-model', $event)"
             @update:thinking-level="emit('update:thinkingLevel', $event)"
             @submit="emit('send')"
+            @abort="emit('abort')"
           />
         </div>
       </template>

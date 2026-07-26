@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Activity, ArrowRight, Check, Clock, Copy, Download, FileText, Pencil, Bot } from '@lucide/vue'
+import { Activity, ArrowRight, Check, Clock, Copy, Download, FileText, Bot } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import { UiButton } from '@/components/ui'
 import MarkdownRender from './MarkdownRender.vue'
@@ -18,27 +18,12 @@ const emit = defineEmits<{
 }>()
 
 const copied = ref(false)
-const isEditing = ref(false)
-const editContent = ref('')
 const isStreaming = computed(() => props.message.id.startsWith('stream-'))
 
 function handleCopy() {
   navigator.clipboard.writeText(props.message.content)
   copied.value = true
   setTimeout(() => copied.value = false, 2000)
-}
-
-function startEdit() {
-  editContent.value = props.message.content
-  isEditing.value = true
-}
-
-function cancelEdit() {
-  isEditing.value = false
-}
-
-function saveEdit() {
-  isEditing.value = false
 }
 
 const timeLabel = computed(() => {
@@ -114,26 +99,14 @@ const timeLabel = computed(() => {
             <Check v-if="copied" :size="11" />
             <Copy v-else :size="11" />
           </UiButton>
-          <UiButton variant="ghost" size="icon" class="message-action-btn" :title="$t('chat.edit')" @click="startEdit">
-            <Pencil :size="11" />
-          </UiButton>
         </div>
 
         <div class="message-content user">
-          <template v-if="isEditing">
-            <textarea v-model="editContent" class="edit-textarea" rows="3" />
-            <div class="edit-actions">
-              <UiButton variant="ghost" size="sm" @click="cancelEdit">{{ $t('common.cancel') }}</UiButton>
-              <UiButton variant="default" size="sm" @click="saveEdit">{{ $t('common.save') }}</UiButton>
-            </div>
-          </template>
-          <template v-else>
-            <p>{{ message.content }}</p>
-            <div v-if="timeLabel" class="user-message-time">
-              <Clock :size="9" />
-              {{ timeLabel }}
-            </div>
-          </template>
+          <p>{{ message.content }}</p>
+          <div v-if="timeLabel" class="user-message-time">
+            <Clock :size="9" />
+            {{ timeLabel }}
+          </div>
         </div>
       </div>
     </template>

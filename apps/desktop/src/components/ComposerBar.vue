@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowUp, BrainCircuit, ChevronDown, Cpu, Plus, Image, FileText, Settings } from '@lucide/vue'
+import { ArrowUp, BrainCircuit, ChevronDown, Cpu, Plus, Image, FileText, Settings, Square } from '@lucide/vue'
 import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -32,6 +32,7 @@ const emit = defineEmits<{
   'select-model': [model: PiModelDto]
   'update:thinkingLevel': [level: PiThinkingLevel]
   'submit': []
+  'abort': []
   'add-image': []
   'add-file': []
 }>()
@@ -159,6 +160,17 @@ function goToAgentSettings() {
         />
 
         <UiButton
+          v-if="isRunning && !modelValue.trim()"
+          variant="ghost"
+          size="icon"
+          class="composer-send composer-abort"
+          :title="t('chat.interrupt')"
+          @click="emit('abort')"
+        >
+          <Square :size="13" />
+        </UiButton>
+        <UiButton
+          v-else
           variant="ghost"
           size="icon"
           class="composer-send"

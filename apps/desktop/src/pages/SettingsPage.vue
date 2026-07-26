@@ -1041,6 +1041,20 @@ function setPiModelKind(kind: 'builtin' | 'custom') {
   piModelForm.provider = kind === 'custom' ? 'custom-openai' : 'openai'
 }
 
+/** Base URL example follows the selected wire API. */
+const piBaseUrlExample = computed(() => {
+  switch (piModelForm.api) {
+    case 'anthropic-messages':
+      return 'https://api.anthropic.com'
+    case 'google-generative-ai':
+      return 'https://generativelanguage.googleapis.com/v1beta'
+    case 'openai-responses':
+      return 'https://api.example.com/v1'
+    default:
+      return 'https://api.example.com/v1'
+  }
+})
+
 function openPiModelModal() {
   piEditingModel.value = null
   setPiModelKind('builtin')
@@ -4149,7 +4163,7 @@ import '../settings/settings.css'
               </div>
               <div class="settings-field">
                 <UiLabel>{{ t('settings.baseUrl') }}</UiLabel>
-                <UiInput v-model="piModelForm.baseUrl" type="url" placeholder="https://api.example.com/v1" />
+                <UiInput v-model="piModelForm.baseUrl" type="url" :placeholder="piBaseUrlExample" />
               </div>
               <div class="settings-field">
                 <UiLabel>{{ t('settings.modelLabel') }}</UiLabel>

@@ -3434,6 +3434,16 @@ transition: left 0.2s ease, right 0.2s ease;
   cursor: not-allowed;
 }
 
+/* Send button becomes a stop control while a run is live and the draft is empty */
+.composer-abort {
+  color: var(--accent-danger);
+}
+
+.composer-abort:hover:not(:disabled) {
+  color: var(--accent-danger);
+  background: color-mix(in srgb, var(--accent-danger) 14%, transparent);
+}
+
 .composer-toolbar {
   display: flex;
   align-items: center;
@@ -5521,6 +5531,16 @@ background: rgba(var(--bg-primary-rgb, 10, 14, 20), 0.6);
 .shell[data-ark-theme="ark"] .composer-send:hover:not(:disabled) {
   color: #061014;
   background: var(--ark-paper);
+}
+
+.shell[data-ark-theme="ark"] .composer-abort {
+  color: #f4f6f6;
+  background: var(--accent-danger);
+}
+
+.shell[data-ark-theme="ark"] .composer-abort:hover:not(:disabled) {
+  color: #f4f6f6;
+  background: color-mix(in srgb, var(--accent-danger) 82%, #000);
 }
 
 .shell[data-ark-theme="ark"] .composer-toolbar {

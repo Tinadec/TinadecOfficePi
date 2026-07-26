@@ -174,7 +174,9 @@ new Elysia({ adapter: node() })
 		// service; the key is written to the isolated auth.json and never echoed.
 		const input = record(body);
 		const kind = stringValue(input.kind) === "custom" ? "custom" : "builtin";
-		const rawProvider = (stringValue(input.provider) ?? "").trim().toLowerCase();
+		const rawProvider = (stringValue(input.provider) ?? "")
+			.trim()
+			.toLowerCase();
 		if (!rawProvider)
 			return fail(set, 400, "INVALID_INPUT", "Provider is required.");
 		if (kind === "builtin" && !BUILTIN_PROVIDERS.has(rawProvider))
@@ -249,9 +251,7 @@ new Elysia({ adapter: node() })
 					? (providers[rawProvider] as Record<string, unknown>)
 					: {};
 			const previousModelId = (stringValue(input.previousModelId) ?? "").trim();
-			const replacedIds = new Set(
-				[modelId, previousModelId].filter(Boolean),
-			);
+			const replacedIds = new Set([modelId, previousModelId].filter(Boolean));
 			const existingModels = Array.isArray(existing.models)
 				? (existing.models as Array<Record<string, unknown>>)
 				: [];
@@ -293,8 +293,8 @@ new Elysia({ adapter: node() })
 					"utf8",
 				);
 			} catch {
-			// Missing or malformed isolated config file: treat as empty.
-		}
+				// Missing or malformed isolated config file: treat as empty.
+			}
 			return { provider, modelId: modelId ?? provider };
 		}
 		if (!modelId)
@@ -320,8 +320,8 @@ new Elysia({ adapter: node() })
 							"utf8",
 						);
 					} catch {
-			// Missing or malformed isolated config file: treat as empty.
-		}
+						// Missing or malformed isolated config file: treat as empty.
+					}
 				}
 				await writeFile(
 					join(dir, "models.json"),

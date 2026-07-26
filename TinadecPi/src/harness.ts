@@ -247,8 +247,8 @@ export class PiHarness {
 				.catch(() => undefined);
 		});
 
+		const messageCount = live.session.messages.length;
 		try {
-			const messageCount = live.session.messages.length;
 			await live.session.prompt(
 				promptForMode(content, mode, config.systemPrompt),
 			);
@@ -343,12 +343,39 @@ export class PiHarness {
 			const message = error instanceof Error ? error.message : String(error);
 			const cancelled = this.abortedRuns.has(run.id);
 			const status = cancelled ? "cancelled" : "failed";
+			// Keep whatever the model already produced so an abort does not erase
+			// the partially streamed answer from the conversation.
+			let partialMessageId: string | null = null;
+			if (cancelled) {
+				const partial = partialAssistantText(
+					live.session.messages.slice(messageCount),
+				);
+				if (partial) {
+					const saved = await this.store.addMessage(
+						sessionId,
+						"assistant",
+						partial,
+						run.id,
+					);
+					partialMessageId = saved.id;
+					await this.store.publish(
+						"message.created",
+						sessionId,
+						{ id: saved.id, role: "assistant", run_id: run.id },
+						["pi.agent"],
+					);
+				}
+			}
 			await this.completeConfiguredAgents(
 				run.id,
 				cancelled ? "skipped" : "failed",
 				pairDelegation.requestedAgents,
 			);
-			await this.store.updateRun(run.id, { status, error: message });
+			await this.store.updateRun(run.id, {
+				status,
+				error: message,
+				...(partialMessageId ? { assistant_message_id: partialMessageId } : {}),
+			});
 			await this.store.updateSession(sessionId, {
 				status: cancelled ? "idle" : "failed",
 			});
@@ -660,7 +687,7 @@ export class PiHarness {
 		const execution = this.store.getToolExecution(event.toolCallId);
 		if (!execution) return;
 		execution.status = event.isError ? "failed" : "completed";
-		execution.summary = summarize(event.result);
+		execution.summary = toolResultText(event.result);
 		execution.evidence = compactEvidence(event.result);
 		execution.updated_at = new Date().toISOString();
 		execution.duration_ms = Math.max(
@@ -1153,6 +1180,29 @@ function summarize(value: unknown): string {
 	}
 }
 
+/** Extract human-readable text from a Pi tool result instead of raw JSON. */
+function toolResultText(value: unknown): string {
+	if (typeof value === "string") return truncate(value, 1000);
+	if (value && typeof value === "object") {
+		const content = (value as Record<string, unknown>).content;
+		if (Array.isArray(content)) {
+			const text = content
+				.filter(
+					(part): part is Record<string, unknown> =>
+						!!part && typeof part === "object",
+				)
+				.filter(
+					(part) => part.type === "text" && typeof part.text === "string",
+				)
+				.map((part) => part.text as string)
+				.join("\n")
+				.trim();
+			if (text) return truncate(text, 1000);
+		}
+	}
+	return summarize(value);
+}
+
 function compactEvidence(value: unknown): string[] {
 	const summary = summarize(value);
 	return summary && summary !== "undefined" ? [summary] : [];
@@ -1204,6 +1254,28 @@ function modelInfo(model: unknown): ModelInfo | null {
 			typeof value.maxTokens === "number" ? value.maxTokens : undefined,
 		reasoning: value.reasoning === true,
 	};
+}
+
+/** Extract streamed assistant text even from an aborted (error-carrying) message. */
+export function partialAssistantText(messages: readonly unknown[]): string {
+	for (const message of [...messages].reverse()) {
+		if (!message || typeof message !== "object") continue;
+		const value = message as Record<string, unknown>;
+		if (value.role !== "assistant") continue;
+		const content = value.content;
+		if (typeof content === "string" && content.trim()) return content;
+		if (!Array.isArray(content)) continue;
+		const text = content
+			.filter(
+				(part): part is Record<string, unknown> =>
+					!!part && typeof part === "object",
+			)
+			.filter((part) => part.type === "text" && typeof part.text === "string")
+			.map((part) => part.text as string)
+			.join("");
+		if (text.trim()) return text;
+	}
+	return "";
 }
 
 export function lastAssistantResult(messages: readonly unknown[]): {

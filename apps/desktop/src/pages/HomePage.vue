@@ -392,7 +392,12 @@ function streamMessage(sessionId: string, content: string): Promise<void> {
           streamingStatus.value = `正在调用 ${chunk.tool_id ?? '工具'}。`
         }
         if (chunk.kind === 'tool_execution') {
-          streamingStatus.value = chunk.summary || `${chunk.tool_id ?? '工具'} ${chunk.status ?? '已更新'}。`
+          const toolLabel = chunk.tool_id ?? '工具'
+          streamingStatus.value = chunk.status === 'failed'
+            ? `${toolLabel} 执行失败。`
+            : chunk.status === 'completed'
+              ? `${toolLabel} 已完成。`
+              : `${toolLabel} 执行中。`
         }
         if (chunk.kind === 'artifact_created') {
           streamingStatus.value = `${chunk.title ?? 'Markdown 产物'} 已生成。`
@@ -405,7 +410,12 @@ function streamMessage(sessionId: string, content: string): Promise<void> {
           }
         }
         if (chunk.kind === 'error') {
-          reject(new Error(chunk.safe_error_message ?? 'Pi invocation failed'))
+          if (chunk.finish_reason === 'cancelled') {
+            // User-initiated abort: not an error. Partial output is persisted server-side.
+            resolve()
+          } else {
+            reject(new Error(chunk.safe_error_message ?? 'Pi invocation failed'))
+          }
         }
         if (chunk.kind === 'done') resolve()
       },
@@ -595,6 +605,9 @@ onUnmounted(() => {
         :orchestration="orchestration"
         :artifacts-by-run="artifactsByRun"
         :streaming-status="streamingStatus"
+        :activity-running="isPiRunning"
+        :activity-thinking-steps="agentThinkingSteps"
+        :activity-tool-calls="agentToolCalls"
         :busy="busy"
         :is-running="isPiRunning"
         :draft="draft"
@@ -610,6 +623,7 @@ onUnmounted(() => {
         @download-artifact="downloadArtifact"
         @continue-artifact="continueArtifact"
         @send="sendMessage"
+        @abort="abortCurrentRun"
         @welcome-send="handleWelcomeSend"
         @create-project="openProject"
         @select-project="selectedProjectId = $event"
