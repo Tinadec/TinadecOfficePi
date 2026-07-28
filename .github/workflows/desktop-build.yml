@@ -76,6 +76,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # package-lock was generated on Windows; rollup optional natives are platform-specific.
+      - name: Repair rollup native binary
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            Linux) npm install --no-save @rollup/rollup-linux-x64-gnu ;;
+            macOS) npm install --no-save @rollup/rollup-darwin-x64 @rollup/rollup-darwin-arm64 ;;
+            Windows) npm install --no-save @rollup/rollup-win32-x64-msvc ;;
+          esac
+
       - name: Test desktop
         run: npm test -w @tinadec/desktop
 
