@@ -15,10 +15,10 @@
     "preview": "vite preview --host 127.0.0.1",
     "test": "npm run check:i18n && vitest run && node --test electron/appConfig.test.cjs electron/piModelConfig.test.cjs electron/serviceManager.test.cjs",
     "stage:runtime": "node scripts/stage-runtime.mjs",
-    "dist": "npm run build && npm run stage:runtime && electron-builder",
+    "dist": "npm run build && npm run stage:runtime && electron-builder --publish never",
     "dist:win": "npm run build && npm run stage:runtime -- win-x64 && node scripts/package-win.mjs",
-    "dist:mac": "npm run build && npm run stage:runtime -- osx-x64 && electron-builder --mac --x64",
-    "dist:linux": "npm run build && npm run stage:runtime -- linux-x64 && electron-builder --linux --x64"
+    "dist:mac": "npm run build && npm run stage:runtime -- osx-x64 && electron-builder --mac --x64 --publish never",
+    "dist:linux": "npm run build && npm run stage:runtime -- linux-x64 && electron-builder --linux --x64 --publish never"
   },
   "dependencies": {
     "node-pty": "^1.1.0"
@@ -69,6 +69,7 @@
   "build": {
     "appId": "com.tinadec.office",
     "productName": "TinadecOffice",
+    "executableName": "TinadecOffice",
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "asar": true,
     "npmRebuild": false,
@@ -125,7 +126,12 @@
         "deb"
       ],
       "category": "Development",
-      "icon": "public/tinadec-build.png"
+      "icon": "public/tinadec-build.png",
+      "desktop": {
+        "Name": "TinadecOffice",
+        "StartupWMClass": "TinadecOffice"
+      },
+      "executableName": "TinadecOffice"
     }
   }
 }

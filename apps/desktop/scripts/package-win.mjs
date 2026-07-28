@@ -10,7 +10,7 @@ mkdirSync(tmp, { recursive: true });
 
 const result = spawnSync(
 	process.platform === "win32" ? "npx.cmd" : "npx",
-	["electron-builder", "--win", "--x64", ...process.argv.slice(2)],
+	["electron-builder", "--win", "--x64", "--publish", "never", ...process.argv.slice(2)],
 	{
 		cwd: desktopDir,
 		env: {

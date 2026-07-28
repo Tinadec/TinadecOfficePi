@@ -80,11 +80,8 @@ jobs:
       - name: Repair rollup native binary
         shell: bash
         run: |
-          case "$RUNNER_OS" in
-            Linux) npm install --no-save @rollup/rollup-linux-x64-gnu ;;
-            macOS) npm install --no-save @rollup/rollup-darwin-x64 @rollup/rollup-darwin-arm64 ;;
-            Windows) npm install --no-save @rollup/rollup-win32-x64-msvc ;;
-          esac
+          PKG=$(node -p "({darwin:{x64:'@rollup/rollup-darwin-x64',arm64:'@rollup/rollup-darwin-arm64'},linux:{x64:'@rollup/rollup-linux-x64-gnu',arm64:'@rollup/rollup-linux-arm64-gnu'},win32:{x64:'@rollup/rollup-win32-x64-msvc'}})[process.platform][process.arch]")
+          npm install --no-save "$PKG"
 
       - name: Test desktop
         run: npm test -w @tinadec/desktop
