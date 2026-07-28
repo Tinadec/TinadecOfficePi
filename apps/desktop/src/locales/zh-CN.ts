@@ -63,6 +63,7 @@ export default {
 	},
 	chat: {
 		title: "Tinadec 会话",
+		copy: "复制",
 		noProject: "未打开项目",
 		placeholder:
 			"默认与会议智能体对话，让它拆解任务、规划执行并调度其他智能体...",
@@ -296,6 +297,8 @@ export default {
 	settings: {
 		title: "设置",
 		back: "返回",
+		close: "关闭",
+		edit: "编辑",
 		general: "常规",
 		generalSubtitle: "配置 Desktop 与 TinadecOffice 服务的连接方式。",
 		gatewayConnection: "Gateway 连接",
@@ -848,6 +851,7 @@ export default {
 	},
 	market: {
 		title: "市场",
+		loadFailed: "市场数据加载失败",
 		subtitle: "通过 Core 策略安装 Skill、MCP Server 与 ACP Adapter。",
 		search: "搜索扩展",
 		sources: "来源",
@@ -1001,6 +1005,7 @@ export default {
 	},
 	terminal: {
 		newTerminal: "新建终端",
+		createFailed: "终端创建失败",
 		close: "关闭终端",
 		restart: "重启终端",
 		defaultShell: "默认终端",

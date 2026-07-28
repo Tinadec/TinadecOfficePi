@@ -189,6 +189,7 @@ declare global {
 	interface Window {
 		tinadec: {
 			gatewayUrl: () => string;
+			usesBundledCore: () => boolean;
 			getAppConfig: () => Promise<{
 				gateway_url: string;
 				source: "default" | "user" | "environment";

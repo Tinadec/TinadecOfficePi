@@ -34,7 +34,12 @@ function petDirectory(slug) {
 }
 
 function trustedPetdexUrl(value) {
-  const url = new URL(value);
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error('Petdex asset URL is not trusted');
+  }
   const host = url.hostname.toLowerCase();
   if (url.protocol !== 'https:' || url.port || url.username || url.password || (host !== 'petdex.dev' && !host.endsWith('.petdex.dev'))) {
     throw new Error('Petdex asset URL is not trusted');
@@ -115,7 +120,12 @@ function normalizeCatalogPet(value, fields, assetBase) {
 async function fetchCatalog(force = false) {
   if (!force && manifestCache && manifestCache.expiresAt > Date.now()) return manifestCache.pets;
   const { buffer } = await fetchTrusted(PETDEX_MANIFEST_URL, MAX_MANIFEST_BYTES);
-  const manifest = JSON.parse(buffer.toString('utf8'));
+  let manifest;
+  try {
+    manifest = JSON.parse(buffer.toString('utf8'));
+  } catch {
+    throw new Error('Petdex manifest is not valid JSON');
+  }
   if (!manifest || manifest.v !== 2 || !Array.isArray(manifest.fields) || !Array.isArray(manifest.pets)) {
     throw new Error('Petdex manifest is invalid');
   }
@@ -218,7 +228,11 @@ async function listDownloaded() {
 }
 
 function spriteExtension(url) {
-  return new URL(url).pathname.toLowerCase().endsWith('.png') ? 'png' : 'webp';
+  try {
+    return new URL(url).pathname.toLowerCase().endsWith('.png') ? 'png' : 'webp';
+  } catch {
+    return 'webp';
+  }
 }
 
 function validSpritesheet(buffer, extension) {
@@ -239,7 +253,12 @@ async function downloadPet(slugInput) {
     fetchTrusted(pet.petJsonUrl, MAX_PET_JSON_BYTES),
     fetchTrusted(pet.spritesheetUrl, MAX_SPRITESHEET_BYTES),
   ]);
-  const petJson = JSON.parse(petJsonResponse.buffer.toString('utf8'));
+  let petJson;
+  try {
+    petJson = JSON.parse(petJsonResponse.buffer.toString('utf8'));
+  } catch {
+    throw new Error('Pet metadata is not valid JSON');
+  }
   if (!petJson || typeof petJson !== 'object') throw new Error('Pet metadata is invalid');
   const extension = spriteExtension(pet.spritesheetUrl);
   if (!validSpritesheet(spritesheetResponse.buffer, extension)) throw new Error('Pet spritesheet format is invalid');

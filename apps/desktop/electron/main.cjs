@@ -15,6 +15,10 @@ const {
 	saveGatewayUrl,
 } = require("./appConfig.cjs");
 const {
+	startBundledServices,
+	stopBundledServices,
+} = require("./serviceManager.cjs");
+const {
 	deletePiModel,
 	listPiModelConfigs,
 	savePiModel,
@@ -355,6 +359,7 @@ registerTerminalIpc();
 
 // Persist panel states before quit and clean up terminals
 app.on("before-quit", () => {
+	stopBundledServices();
 	destroyAllTerminals();
 	persistPanelStatesForQuit();
 	closeAllPetWindows();
@@ -364,6 +369,21 @@ app.whenReady().then(async () => {
 	process.env.TINADEC_RESOLVED_GATEWAY_URL = loadAppConfig(
 		appConfigFile(),
 	).gateway_url;
+	process.env.TINADEC_BUNDLED_CORE = "0";
+	try {
+		const services = await startBundledServices({
+			isPackaged: app.isPackaged,
+			gatewayUrl: process.env.TINADEC_RESOLVED_GATEWAY_URL,
+			resourcesPath: process.resourcesPath,
+			userDataPath: app.getPath("userData"),
+		});
+		process.env.TINADEC_BUNDLED_CORE = services.ownsCore ? "1" : "0";
+	} catch (error) {
+		dialog.showErrorBox(
+			"Tinadec services failed to start",
+			error instanceof Error ? error.message : String(error),
+		);
+	}
 	protocol.handle("tinadec-pet-preview", async (request) => {
 		try {
 			const url = new URL(request.url);

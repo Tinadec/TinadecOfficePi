@@ -3,6 +3,9 @@ obj/
 node_modules/
 dist/
 dist-electron/
+apps/desktop/release/
+apps/desktop/runtime/
+apps/desktop/.runtime-cache/
 .vite/
 .playwright-cli/
 *.db

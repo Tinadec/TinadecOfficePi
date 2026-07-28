@@ -460,21 +460,19 @@ async function handleSend(content: string) {
         const title = generateTitle(content)
         try {
           await api.updateSessionTitle(sessionId, title)
-          const idx = sessions.value.findIndex((s) => s.id === sessionId)
-          if (idx !== -1) {
-            sessions.value[idx] = { ...sessions.value[idx], title }
-          }
         } catch {
-          const idx = sessions.value.findIndex((s) => s.id === sessionId)
-          if (idx !== -1) {
-            sessions.value[idx] = { ...sessions.value[idx], title }
-          }
+          // Title persistence is best-effort; local list still updates below.
+        }
+        const idx = sessions.value.findIndex((s) => s.id === sessionId)
+        if (idx !== -1) {
+          sessions.value[idx] = { ...sessions.value[idx], title }
         }
         pendingSessionId.value = null
       }
-
-      await loadMessagesAndApprovals()
     } finally {
+      // Always reload: the user message (and any partial assistant output on
+      // abort/failure) is already persisted server-side.
+      await loadMessagesAndApprovals().catch(() => undefined)
       streamingAssistant.value = null
       streamingStatus.value = ''
     }

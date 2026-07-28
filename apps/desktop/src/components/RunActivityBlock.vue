@@ -19,11 +19,12 @@ watch(
 )
 
 function thinkingText(steps: ThinkingStep[]): string {
-  return steps
-    .filter((step) => step.type === 'model_thinking')
-    .map((step) => step.description)
-    .join('\n')
-    .trim()
+  // Each run has its own model_thinking step; show only the latest so the
+  // inline block reflects the current run rather than the whole session.
+  for (let i = steps.length - 1; i >= 0; i -= 1) {
+    if (steps[i].type === 'model_thinking') return steps[i].description.trim()
+  }
+  return ''
 }
 
 function statusIcon(status: string) {

@@ -533,7 +533,14 @@ export class CoreStore {
 		this.state.events.push(event);
 		this.state.events = this.state.events.slice(-500);
 		await this.save();
-		for (const listener of this.listeners) listener(event);
+		for (const listener of this.listeners) {
+			try {
+				listener(event);
+			} catch {
+				// A dead SSE subscriber (closed stream controller) must not break
+				// event publication for everyone else.
+			}
+		}
 		return event;
 	}
 
@@ -544,13 +551,16 @@ export class CoreStore {
 
 	private save(): Promise<void> {
 		const snapshot = `${JSON.stringify(this.state, null, 2)}\n`;
-		this.writeTail = this.writeTail.then(async () => {
+		const write = this.writeTail.then(async () => {
 			await mkdir(dirname(this.filePath), { recursive: true });
 			const temporary = `${this.filePath}.${process.pid}.${randomUUID()}.tmp`;
 			await writeFile(temporary, snapshot, "utf8");
 			await rename(temporary, this.filePath);
 		});
-		return this.writeTail;
+		// Keep the tail resolved even when a write fails, otherwise one transient
+		// error (e.g. a Windows rename lock) would poison every later save.
+		this.writeTail = write.catch(() => undefined);
+		return write;
 	}
 }
 

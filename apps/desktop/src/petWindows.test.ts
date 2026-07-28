@@ -31,6 +31,7 @@ describe("local pet window shell", () => {
 	});
 
 	it("keeps Petdex download and local pet actions inside the desktop process", () => {
+		const normalizedPetStore = petStore.replace(/"/g, "'");
 		expect(preload).toContain(
 			'ipcRenderer.invoke("tinadec:pet-create", petId)',
 		);
@@ -44,18 +45,20 @@ describe("local pet window shell", () => {
 			'ipcRenderer.invoke("tinadec:pet-open-folder", slug)',
 		);
 		expect(preload).toContain('ipcRenderer.invoke("tinadec:pet-remove", slug)');
-		expect(petStore).toContain(
+		expect(normalizedPetStore).toContain(
 			"const PETDEX_MANIFEST_URL = 'https://petdex.dev/api/manifest/v2'",
 		);
-		expect(petStore).toContain("manifest.v !== 2");
-		expect(petStore).toContain("app.getPath('userData')");
-		expect(petStore).toContain("Petdex asset URL is not trusted");
-		expect(petStore).toContain("Referer: 'https://petdex.dev/'");
-		expect(petStore).toContain("const previewRequests = new Map()");
-		expect(petStore).toContain("MAX_PREVIEW_CACHE_BYTES");
+		expect(normalizedPetStore).toContain("manifest.v !== 2");
+		expect(normalizedPetStore).toContain("app.getPath('userData')");
+		expect(normalizedPetStore).toContain("Petdex asset URL is not trusted");
+		expect(normalizedPetStore).toContain("Referer: 'https://petdex.dev/'");
+		expect(normalizedPetStore).toContain("const previewRequests = new Map()");
+		expect(normalizedPetStore).toContain("MAX_PREVIEW_CACHE_BYTES");
 		expect(mainProcess).toContain('scheme: "tinadec-pet-preview"');
 		expect(mainProcess).toContain('protocol.handle("tinadec-pet-preview"');
-		expect(petStore).toContain("await fs.rename(temporary, destination)");
+		expect(normalizedPetStore).toContain(
+			"await fs.rename(temporary, destination)",
+		);
 		expect(router.replace(/"/g, "'")).toContain("path: '/pet'");
 		expect(app).toContain(
 			"const isPetWindow = window.location.hash.startsWith('#/pet')",

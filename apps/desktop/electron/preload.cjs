@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld("tinadec", {
 		process.env.TINADEC_RESOLVED_GATEWAY_URL ??
 		process.env.TINADEC_GATEWAY_URL ??
 		"http://127.0.0.1:48730",
+	usesBundledCore: () => process.env.TINADEC_BUNDLED_CORE === "1",
 	getAppConfig: () => ipcRenderer.invoke("tinadec:app-config"),
 	saveGatewayUrl: (gatewayUrl) =>
 		ipcRenderer.invoke("tinadec:gateway-url-save", gatewayUrl),

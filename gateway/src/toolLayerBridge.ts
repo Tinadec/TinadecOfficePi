@@ -231,7 +231,12 @@ function resolveToolLayerLaunch(): { command: string; args: string[] } {
 function parseConfiguredArgs(): string[] {
   const value = process.env['TINADEC_TOOLS_ARGS']?.trim();
   if (!value) return [];
-  const parsed: unknown = JSON.parse(value);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error('TINADEC_TOOLS_ARGS is not valid JSON; expected a JSON string array.');
+  }
   if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === 'string')) {
     throw new Error('TINADEC_TOOLS_ARGS must be a JSON string array.');
   }

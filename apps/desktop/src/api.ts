@@ -1762,12 +1762,15 @@ export const api = {
 
 				if (!response.ok) {
 					const text = await response.text();
-					throw new Error(
-						extractErrorMessage(
-							text.length > 0 ? JSON.parse(text) : null,
-							response.statusText,
-						),
-					);
+					let parsed: unknown = null;
+					if (text.length > 0) {
+						try {
+							parsed = JSON.parse(text);
+						} catch {
+							// Non-JSON error body (e.g. proxy HTML); fall back to status text.
+						}
+					}
+					throw new Error(extractErrorMessage(parsed, response.statusText));
 				}
 
 				const reader = response.body?.getReader();

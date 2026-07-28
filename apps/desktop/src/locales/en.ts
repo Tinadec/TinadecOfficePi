@@ -64,6 +64,7 @@ export default {
 	},
 	chat: {
 		title: "Tinadec session",
+		copy: "Copy",
 		noProject: "No project opened",
 		placeholder:
 			"Talk to the Meeting Agent by default. It will split the task, plan execution, and dispatch other agents.",
@@ -309,6 +310,8 @@ export default {
 	settings: {
 		title: "Settings",
 		back: "Back",
+		close: "Close",
+		edit: "Edit",
 		general: "General",
 		generalSubtitle:
 			"Configure how this Desktop connects to TinadecOffice services.",
@@ -888,6 +891,7 @@ export default {
 	},
 	market: {
 		title: "Market",
+		loadFailed: "Failed to load market data",
 		subtitle:
 			"Install Skills, MCP servers, and ACP adapters through Core policy.",
 		search: "Search extensions",
@@ -1043,6 +1047,7 @@ export default {
 	},
 	terminal: {
 		newTerminal: "New Terminal",
+		createFailed: "Failed to create terminal",
 		close: "Close Terminal",
 		restart: "Restart Terminal",
 		defaultShell: "Default Shell",

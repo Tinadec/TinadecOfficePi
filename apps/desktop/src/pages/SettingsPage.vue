@@ -1023,8 +1023,12 @@ function piModelConfigFor(model: PiModelDto): PiModelConfigSummary | null {
   }) ?? null
 }
 
+function usesLocalPiModelConfig() {
+  return window.tinadec?.usesBundledCore?.() === true
+}
+
 async function loadPiModelConfigs() {
-  if (window.tinadec?.listPiModelConfigs) {
+  if (usesLocalPiModelConfig() && window.tinadec?.listPiModelConfigs) {
     piModelConfigs.value = await window.tinadec.listPiModelConfigs()
   } else {
     try {
@@ -1085,7 +1089,7 @@ function openPiModelEditor(config: PiModelConfigSummary) {
 async function savePiModelConfig() {
   piModelSelectionBusy.value = true
   try {
-    if (window.tinadec?.savePiModel) {
+    if (usesLocalPiModelConfig() && window.tinadec?.savePiModel) {
       await window.tinadec.savePiModel({
         ...piModelForm,
         update: piEditingModel.value !== null,
@@ -1132,7 +1136,7 @@ async function deletePiModelConfig(config: PiModelConfigSummary) {
   })) return
   piModelSelectionBusy.value = true
   try {
-    if (window.tinadec?.deletePiModel) {
+    if (usesLocalPiModelConfig() && window.tinadec?.deletePiModel) {
       await window.tinadec.deletePiModel({ provider: config.provider, modelId: config.modelId })
     } else {
       await api.deletePiModelConfig(config.provider, config.modelId)

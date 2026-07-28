@@ -297,8 +297,7 @@ export function useAgentActivity(
 	function processTaskAssigned(event: EventEnvelope) {
 		const agentId = extractString(event.payload, "agent_id") ?? "unknown";
 		const agentName = extractString(event.payload, "agent_name") ?? "Agent";
-		const agentLayer =
-			extractString(event.payload, "agent_layer") ?? "execution";
+		const agentLayer = extractString(event.payload, "agent_layer") ?? "execution";
 		const agentType = extractString(event.payload, "agent_type") ?? "";
 		const taskTitle =
 			extractString(event.payload, "task_title") ??
@@ -565,7 +564,8 @@ export function useAgentActivity(
 		const agentId = extractString(event.payload, "agent_id");
 		const agentName = extractString(event.payload, "agent_name");
 		const agentType = extractString(event.payload, "agent_type");
-		const agentLayer = extractString(event.payload, "agent_layer") ?? "execution";
+		const agentLayer =
+			extractString(event.payload, "agent_layer") ?? "execution";
 		const task = extractString(event.payload, "task");
 		const status = extractString(event.payload, "status");
 		if (!agentId || !agentName || !agentType || !status) return;
@@ -868,7 +868,11 @@ export function useAgentActivity(
 		const existing = [...thinkingSteps.value]
 			.reverse()
 			.find((step) => step.type === "model_thinking");
-		if (existing) {
+		// Only continue an existing thinking block if it belongs to the current
+		// run; otherwise a new run's reasoning would merge into the previous one.
+		const reusable =
+			existing && (!lastRunStartedAt || existing.timestamp >= lastRunStartedAt);
+		if (reusable) {
 			thinkingSteps.value = thinkingSteps.value.map((step) =>
 				step.id === existing.id
 					? {

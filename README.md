@@ -47,6 +47,24 @@ npm run build:tools
 `build:tools` is optional for ordinary development, but required when using or
 testing Gateway Code-tool endpoints backed by `TinadecTools`.
 
+Desktop installers can be built on their native platform with:
+
+```bash
+npm run dist:win -w @tinadec/desktop
+npm run dist:mac -w @tinadec/desktop
+npm run dist:linux -w @tinadec/desktop
+```
+
+The `Desktop builds` GitHub Actions workflow runs these builds for Windows,
+macOS, and Linux on pull requests, pushes to `main`, version tags, and manual
+dispatch. Artifacts are uploaded per OS. Windows produces both
+`TinadecOffice-*-win-x64-setup.exe` (NSIS) and
+`TinadecOffice-*-win-x64-portable.exe`. Each package bundles Bun, the compiled
+Core and Gateway services, and a platform-specific self-contained
+`TinadecTools` publish; users do not need Bun or .NET installed. A non-default
+Gateway URL keeps the bundled services disabled and routes model config through
+that Gateway instead of the local package agent dir.
+
 ## Compatibility
 
 - Gateway routes and snake_case request/response fields are preserved.

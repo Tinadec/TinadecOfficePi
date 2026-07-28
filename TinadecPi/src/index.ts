@@ -442,12 +442,14 @@ new Elysia({ adapter: node() })
 					userMessage.id,
 					config,
 				);
+				// Match by run id: content equality is ambiguous when the model
+				// repeats an earlier answer verbatim.
 				return (
 					store
 						.listMessages(params.sessionId)
 						.find(
 							(message) =>
-								message.content === result.content &&
+								message.run_id === result.run_id &&
 								message.role === "assistant",
 						) ?? { content: result.content }
 				);
@@ -1633,16 +1635,29 @@ function sse(
 	return new Response(
 		new ReadableStream({
 			async start(controller) {
-				const send = (value: Record<string, unknown>) =>
-					controller.enqueue(
-						encoder.encode(`data: ${JSON.stringify(value)}\n\n`),
-					);
+				let open = true;
+				const send = (value: Record<string, unknown>) => {
+					if (!open) return;
+					try {
+						controller.enqueue(
+							encoder.encode(`data: ${JSON.stringify(value)}\n\n`),
+						);
+					} catch {
+						// Client disconnected mid-stream; stop pushing.
+						open = false;
+					}
+				};
 				try {
 					await work(send);
 				} catch (error) {
 					send({ kind: "error", safe_error_message: safeError(error) });
 				} finally {
-					controller.close();
+					open = false;
+					try {
+						controller.close();
+					} catch {
+						// Already closed by the client side.
+					}
 				}
 			},
 		}),
