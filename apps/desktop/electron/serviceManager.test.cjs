@@ -7,8 +7,10 @@ const {
 	startBundledServices,
 } = require("./serviceManager.cjs");
 
-test("bundled services only start for the packaged default local gateway", () => {
+test("bundled services start for packaged loopback gateways only", () => {
 	assert.equal(shouldStartBundledServices(true, DEFAULT_GATEWAY_URL), true);
+	assert.equal(shouldStartBundledServices(true, "http://localhost:48730"), true);
+	assert.equal(shouldStartBundledServices(true, "http://127.0.0.1:48730/"), true);
 	assert.equal(shouldStartBundledServices(false, DEFAULT_GATEWAY_URL), false);
 	assert.equal(
 		shouldStartBundledServices(true, "https://gateway.example.com"),

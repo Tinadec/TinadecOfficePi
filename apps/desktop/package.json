@@ -72,6 +72,7 @@
     "executableName": "TinadecOffice",
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "asar": true,
+    "compression": "normal",
     "npmRebuild": false,
     "directories": {
       "output": "release"
@@ -102,9 +103,9 @@
       "icon": "public/tinadec-build.ico"
     },
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": false,
+      "allowToChangeInstallationDirectory": true,
       "artifactName": "${productName}-${version}-${os}-${arch}-setup.${ext}",
       "deleteAppDataOnUninstall": false
     },
@@ -127,10 +128,6 @@
       ],
       "category": "Development",
       "icon": "public/tinadec-build.png",
-      "desktop": {
-        "Name": "TinadecOffice",
-        "StartupWMClass": "TinadecOffice"
-      },
       "executableName": "TinadecOffice"
     }
   }

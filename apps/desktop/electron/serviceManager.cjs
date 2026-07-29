@@ -1,11 +1,11 @@
-const { createWriteStream, existsSync, mkdirSync } = require("node:fs");
+const { closeSync, existsSync, mkdirSync, openSync } = require("node:fs");
 const { join } = require("node:path");
 const { spawn, spawnSync } = require("node:child_process");
 
 const DEFAULT_GATEWAY_URL = "http://127.0.0.1:48730";
 const CORE_URL = "http://127.0.0.1:48731";
 const children = [];
-const logs = [];
+const logFds = new Set();
 
 function bundledRuntimePaths(resourcesPath, platform = process.platform) {
 	const root = join(resourcesPath, "runtime");
@@ -23,7 +23,18 @@ function bundledRuntimePaths(resourcesPath, platform = process.platform) {
 }
 
 function shouldStartBundledServices(isPackaged, gatewayUrl) {
-	return isPackaged && gatewayUrl === DEFAULT_GATEWAY_URL;
+	if (!isPackaged) return false;
+	try {
+		const url = new URL(gatewayUrl);
+		return (
+			url.protocol === "http:" &&
+			(url.hostname === "127.0.0.1" || url.hostname === "localhost") &&
+			url.port === "48730" &&
+			(url.pathname === "/" || url.pathname === "")
+		);
+	} catch {
+		return false;
+	}
 }
 
 async function reachable(url) {
@@ -40,21 +51,30 @@ async function reachable(url) {
 }
 
 function startProcess(label, command, args, cwd, env, logsDir) {
-	const log = createWriteStream(join(logsDir, `${label}.log`), { flags: "a" });
-	logs.push(log);
-	const child = spawn(command, args, {
-		cwd,
-		env,
-		detached: false,
-		windowsHide: true,
-		stdio: ["ignore", log, log],
-	});
-	child.startupError = null;
-	child.once("error", (error) => {
-		child.startupError = error;
-	});
-	children.push(child);
-	return child;
+	const logFd = openSync(join(logsDir, `${label}.log`), "a");
+	logFds.add(logFd);
+	try {
+		const child = spawn(command, args, {
+			cwd,
+			env,
+			detached: false,
+			windowsHide: true,
+			stdio: ["ignore", logFd, logFd],
+		});
+		child.startupError = null;
+		child.once("error", (error) => {
+			child.startupError = error;
+		});
+		child.once("close", () => {
+			if (logFds.delete(logFd)) closeSync(logFd);
+		});
+		children.push(child);
+		return child;
+	} catch (error) {
+		logFds.delete(logFd);
+		closeSync(logFd);
+		throw error;
+	}
 }
 
 async function waitForService(url, child, label, timeoutMs = 30_000) {
@@ -88,6 +108,7 @@ async function startBundledServices({
 		if (name !== "services" && !existsSync(path))
 			throw new Error(`Bundled ${name} runtime is missing: ${path}`);
 	}
+	if (!userDataPath) throw new Error("Electron user data path is unavailable.");
 
 	const dataRoot = join(userDataPath, "runtime");
 	const logsDir = join(dataRoot, "logs");
@@ -158,7 +179,8 @@ function stopBundledServices() {
 			child.kill("SIGTERM");
 		}
 	}
-	for (const log of logs.splice(0)) log.end();
+	for (const logFd of logFds) closeSync(logFd);
+	logFds.clear();
 }
 
 module.exports = {
