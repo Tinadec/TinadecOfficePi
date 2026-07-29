@@ -2,7 +2,11 @@
   "name": "@tinadec/desktop",
   "version": "0.1.0",
   "description": "Tinadec Pi agent desktop workbench",
-  "author": "Tinadec",
+  "author": {
+    "name": "Tinadec",
+    "email": "ws675170761@gmail.com"
+  },
+  "homepage": "https://github.com/Tinadec/TinadecOfficePi",
   "private": true,
   "main": "electron/main.cjs",
   "type": "module",
@@ -15,10 +19,11 @@
     "preview": "vite preview --host 127.0.0.1",
     "test": "npm run check:i18n && vitest run && node --test electron/appConfig.test.cjs electron/piModelConfig.test.cjs electron/serviceManager.test.cjs",
     "stage:runtime": "node scripts/stage-runtime.mjs",
-    "dist": "npm run build && npm run stage:runtime && electron-builder --publish never",
-    "dist:win": "npm run build && npm run stage:runtime -- win-x64 && node scripts/package-win.mjs",
-    "dist:mac": "npm run build && npm run stage:runtime -- osx-x64 && electron-builder --mac --x64 --publish never",
-    "dist:linux": "npm run build && npm run stage:runtime -- linux-x64 && electron-builder --linux --x64 --publish never"
+    "check:runtime": "node scripts/check-runtime.mjs",
+    "dist": "npm run build && npm run stage:runtime && npm run check:runtime && electron-builder --publish never",
+    "dist:win": "npm run build && npm run stage:runtime -- win-x64 && npm run check:runtime && node scripts/package-win.mjs",
+    "dist:mac": "npm run build && npm run stage:runtime -- osx-x64 && npm run check:runtime && electron-builder --mac --x64 --publish never",
+    "dist:linux": "npm run build && npm run stage:runtime -- linux-x64 && npm run check:runtime && electron-builder --linux --x64 --publish never"
   },
   "dependencies": {
     "node-pty": "^1.1.0"
@@ -118,7 +123,7 @@
         "zip"
       ],
       "category": "public.app-category.developer-tools",
-      "icon": "public/tinadec-build.png",
+      "icon": "public/tinadec-build-mac.png",
       "identity": null
     },
     "linux": {
@@ -128,6 +133,7 @@
       ],
       "category": "Development",
       "icon": "public/tinadec-build.png",
+      "maintainer": "Tinadec <ws675170761@gmail.com>",
       "executableName": "TinadecOffice"
     }
   }
