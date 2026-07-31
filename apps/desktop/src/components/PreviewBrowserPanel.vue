@@ -284,7 +284,7 @@ watch(
   height: 28px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-muted);
-  border-radius: 14px;
+  border-radius: var(--radius-panel);
   min-width: 0;
 }
 

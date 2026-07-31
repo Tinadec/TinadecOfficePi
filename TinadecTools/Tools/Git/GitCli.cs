@@ -41,6 +41,12 @@ internal static class GitCli
             stdin: null,
             timeoutMs: 10_000).GetAwaiter().GetResult();
 
+        if (revParse.ExitCode < 0)
+        {
+            error = RuntimePrerequisites.GitError;
+            return null;
+        }
+
         if (!revParse.Success || string.IsNullOrWhiteSpace(revParse.Stdout.Trim()))
         {
             error = $"not a git worktree: {path}";
@@ -105,9 +111,8 @@ internal static class GitCli
                 cancellationToken,
                 maxOutputChars: maxOutputChars).ConfigureAwait(false);
 
-            // git not found: TerminalRunner catches and returns Success=false with ex.Message in Stderr.
-            if (!r.Success && r.ExitCode < 0 && r.Stderr.Contains("cannot find", StringComparison.OrdinalIgnoreCase))
-                return new GitExecResult(false, r.ExitCode, r.Stdout, GitNotFoundCode);
+            if (!r.Success && r.ExitCode < 0)
+                return new GitExecResult(false, r.ExitCode, r.Stdout, RuntimePrerequisites.GitError);
 
             if (r.StdoutTruncated || r.StderrTruncated)
                 return new GitExecResult(false, r.ExitCode, r.Stdout,

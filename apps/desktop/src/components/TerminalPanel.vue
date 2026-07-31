@@ -494,7 +494,7 @@ function setTerminalViewRef(id: string, el: InstanceType<typeof TerminalView> | 
   width: 16px;
   height: 16px;
   border: 0;
-  border-radius: 3px;
+  border-radius: var(--radius-compact);
   color: var(--text-muted);
   background: transparent;
   cursor: pointer;
@@ -534,7 +534,7 @@ function setTerminalViewRef(id: string, el: InstanceType<typeof TerminalView> | 
   padding: 0 6px;
   background: transparent;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   color: var(--text-secondary);
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
@@ -582,7 +582,7 @@ function setTerminalViewRef(id: string, el: InstanceType<typeof TerminalView> | 
   color: var(--text-primary);
   background: transparent;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   cursor: pointer;
   text-align: left;
   transition: background 0.1s ease;
@@ -639,7 +639,7 @@ function setTerminalViewRef(id: string, el: InstanceType<typeof TerminalView> | 
   color: var(--text-primary);
   background: var(--bg-button);
   border: 1px solid var(--border-default);
-  border-radius: 7px;
+  border-radius: var(--radius-surface);
   cursor: pointer;
   transition: background 0.12s ease;
 }

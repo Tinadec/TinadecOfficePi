@@ -185,7 +185,7 @@ defineExpose({
 
 .terminal-view :deep(.xterm-viewport::-webkit-scrollbar-thumb) {
   background: rgba(125, 133, 144, 0.3);
-  border-radius: 3px;
+  border-radius: var(--radius-compact);
 }
 
 .terminal-view :deep(.xterm-viewport::-webkit-scrollbar-thumb:hover) {

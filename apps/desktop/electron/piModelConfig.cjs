@@ -25,20 +25,42 @@ const CUSTOM_APIS = new Set([
 	"google-generative-ai",
 ]);
 
+let configuredPaths = {};
+
 function projectRoot() {
 	return path.resolve(__dirname, "..", "..", "..");
 }
 
-function piModelPaths(root = projectRoot()) {
+function configurePiModelConfig({ resourcesPath, agentDir } = {}) {
+	configuredPaths = {
+		resourcesPath:
+			typeof resourcesPath === "string" && resourcesPath
+				? resourcesPath
+				: undefined,
+		agentDir:
+			typeof agentDir === "string" && agentDir ? agentDir : undefined,
+	};
+}
+
+function piModelPaths(options = {}) {
+	const normalized = typeof options === "string" ? { projectRoot: options } : options;
+	const root = normalized.projectRoot ?? projectRoot();
+	const resourcesPath =
+		normalized.resourcesPath ?? configuredPaths.resourcesPath;
 	const agentDir =
 		process.env.TINADEC_PI_AGENT_DIR ??
+		normalized.agentDir ??
+		configuredPaths.agentDir ??
 		path.join(root, "TinadecPi", ".tinadec-pi", "pi-agent");
+	const moduleRoot = resourcesPath
+		? path.join(resourcesPath, "runtime", "services")
+		: root;
 	return {
 		agentDir,
 		authPath: path.join(agentDir, "auth.json"),
 		modelsPath: path.join(agentDir, "models.json"),
 		authStorageModule: path.join(
-			root,
+			moduleRoot,
 			"node_modules",
 			"@earendil-works",
 			"pi-coding-agent",
@@ -290,6 +312,7 @@ async function deletePiModel(input) {
 }
 
 module.exports = {
+	configurePiModelConfig,
 	deletePiModel,
 	listPiModelConfigs,
 	piModelPaths,

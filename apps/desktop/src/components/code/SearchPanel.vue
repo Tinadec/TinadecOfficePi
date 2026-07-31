@@ -325,7 +325,7 @@ function escapeRegex(s: string): string {
   background: var(--bg-selected);
   margin: 1px -4px;
   padding: 0 4px;
-  border-radius: 2px;
+  border-radius: var(--radius-compact);
 }
 .search-result-ctx-num {
   flex-shrink: 0;
@@ -342,6 +342,6 @@ function escapeRegex(s: string): string {
 }
 .search-highlight {
   background: rgba(245, 158, 11, 0.3);
-  border-radius: 2px;
+  border-radius: var(--radius-compact);
 }
 </style>

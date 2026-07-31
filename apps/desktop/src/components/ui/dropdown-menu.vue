@@ -102,8 +102,9 @@ onUnmounted(() => {
     <div
       v-if="isOpen"
       ref="menuRef"
+      data-slot="dropdown-content"
       :class="cn(
-        'fixed z-[10000] min-w-[8rem] max-w-[calc(100vw-1rem)] overflow-y-auto border p-1',
+        'fixed z-[10000] min-w-[8rem] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-[var(--radius-overlay)] border bg-popover p-1 text-popover-foreground shadow-md',
         props.class,
       )"
       :style="menuStyle"

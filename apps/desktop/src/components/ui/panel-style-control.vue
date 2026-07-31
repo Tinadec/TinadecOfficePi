@@ -233,7 +233,7 @@ function reset(): void {
   -webkit-appearance: none;
   appearance: none;
   background: var(--bg-tertiary);
-  border-radius: 2px;
+  border-radius: var(--radius-compact);
   outline: none;
 }
 

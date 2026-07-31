@@ -48,10 +48,29 @@ jobs:
 
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      WINDOWS_SIGNING_CONFIGURED: ${{ secrets.WIN_CSC_LINK != '' && secrets.WIN_CSC_KEY_PASSWORD != '' }}
+      MACOS_SIGNING_CONFIGURED: ${{ secrets.CSC_LINK != '' && secrets.CSC_KEY_PASSWORD != '' }}
 
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+
+      - name: Enforce Windows release signing policy
+        if: startsWith(github.ref, 'refs/tags/') && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if ($env:WINDOWS_SIGNING_CONFIGURED -ne 'true') {
+            throw 'Tag builds require the standard electron-builder WIN_CSC_LINK and WIN_CSC_KEY_PASSWORD secrets.'
+          }
+
+      - name: Enforce macOS release signing policy
+        if: startsWith(github.ref, 'refs/tags/') && runner.os == 'macOS'
+        shell: bash
+        run: |
+          if [[ "$MACOS_SIGNING_CONFIGURED" != "true" ]]; then
+            echo "Tag builds require the standard electron-builder CSC_LINK and CSC_KEY_PASSWORD secrets." >&2
+            exit 1
+          fi
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -87,7 +106,59 @@ jobs:
         run: npm test -w @tinadec/desktop
 
       - name: Build package
+        if: runner.os != 'macOS' || !startsWith(github.ref, 'refs/tags/')
+        env:
+          WIN_CSC_LINK: ${{ startsWith(github.ref, 'refs/tags/') && runner.os == 'Windows' && secrets.WIN_CSC_LINK || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/') && runner.os == 'Windows' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
         run: npm run ${{ matrix.script }} -w @tinadec/desktop
+
+      # package.json intentionally disables macOS identity discovery for ordinary builds.
+      - name: Build signed macOS package
+        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "true"
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: npm run ${{ matrix.script }} -w @tinadec/desktop -- --config.mac.identity=
+
+      - name: Verify packaged output
+        run: node apps/desktop/scripts/verify-package-output.mjs
+
+      - name: Smoke test packaged Windows app
+        if: runner.os == 'Windows'
+        run: node apps/desktop/scripts/smoke-packaged-windows.mjs
+
+      - name: Verify Windows package signatures
+        if: startsWith(github.ref, 'refs/tags/') && runner.os == 'Windows' && env.WINDOWS_SIGNING_CONFIGURED == 'true'
+        shell: pwsh
+        run: |
+          $release = Resolve-Path 'apps/desktop/release'
+          $packages = @(
+            Join-Path $release 'win-unpacked/TinadecOffice.exe'
+            Get-ChildItem -LiteralPath $release -File | Where-Object { $_.Name -match '-(setup|portable)\.exe$' } | ForEach-Object FullName
+          )
+          if ($packages.Count -ne 3) {
+            throw "Expected the unpacked executable, setup, and portable package; found $($packages.Count)."
+          }
+          foreach ($package in $packages) {
+            $signature = Get-AuthenticodeSignature -LiteralPath $package
+            if ($signature.Status -ne 'Valid') {
+              throw "Invalid Authenticode signature ($($signature.Status)): $package"
+            }
+            Write-Host "Valid Authenticode signature: $package [$($signature.SignerCertificate.Subject)]"
+          }
+
+      - name: Verify macOS app signature
+        if: startsWith(github.ref, 'refs/tags/') && runner.os == 'macOS' && env.MACOS_SIGNING_CONFIGURED == 'true'
+        shell: bash
+        run: |
+          APP_PATH=$(find apps/desktop/release -maxdepth 3 -type d -name TinadecOffice.app -print -quit)
+          if [[ -z "$APP_PATH" ]]; then
+            echo "Packaged TinadecOffice.app was not found." >&2
+            exit 1
+          fi
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          codesign --display --verbose=2 "$APP_PATH"
 
       - name: Upload package
         uses: actions/upload-artifact@v4

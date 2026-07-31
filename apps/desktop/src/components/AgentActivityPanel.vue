@@ -566,7 +566,7 @@ const visibleProgressEvents = computed(() => [...props.progressEvents].slice(-15
   width: 26px;
   height: 26px;
   flex-shrink: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-surface);
   background: var(--bg-tertiary);
   color: var(--accent-primary);
 }
@@ -704,14 +704,14 @@ const visibleProgressEvents = computed(() => [...props.progressEvents].slice(-15
 .agent-panel-progress-bar {
   width: 48px;
   height: 4px;
-  border-radius: 2px;
+  border-radius: var(--radius-compact);
   background: var(--bg-tertiary);
   overflow: hidden;
 }
 
 .agent-panel-progress-fill {
   height: 100%;
-  border-radius: 2px;
+  border-radius: var(--radius-compact);
   background: var(--accent-primary);
   transition: width 0.3s ease;
 }
@@ -769,7 +769,7 @@ const visibleProgressEvents = computed(() => [...props.progressEvents].slice(-15
 .agent-panel-mini-bar {
   width: 40px;
   height: 3px;
-  border-radius: 2px;
+  border-radius: var(--radius-compact);
   background: var(--bg-tertiary);
   overflow: hidden;
   flex-shrink: 0;
@@ -836,7 +836,7 @@ const visibleProgressEvents = computed(() => [...props.progressEvents].slice(-15
   align-items: flex-start;
   gap: 6px;
   padding: 4px 6px;
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   background: var(--bg-tertiary);
 }
 
@@ -937,7 +937,7 @@ const visibleProgressEvents = computed(() => [...props.progressEvents].slice(-15
   place-items: center;
   width: 18px;
   height: 18px;
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   background: var(--bg-tertiary);
   color: var(--text-secondary);
   flex-shrink: 0;
@@ -995,7 +995,7 @@ const visibleProgressEvents = computed(() => [...props.progressEvents].slice(-15
 
 .agent-panel-thinking-tag {
   padding: 1px 4px;
-  border-radius: 3px;
+  border-radius: var(--radius-compact);
   font-size: 9px;
   font-weight: 600;
   background: var(--bg-tertiary);
@@ -1032,7 +1032,7 @@ const visibleProgressEvents = computed(() => [...props.progressEvents].slice(-15
 
 .agent-panel-thinking-severity {
   padding: 1px 4px;
-  border-radius: 3px;
+  border-radius: var(--radius-compact);
   font-size: 9px;
   font-weight: 600;
 }
@@ -1084,7 +1084,7 @@ const visibleProgressEvents = computed(() => [...props.progressEvents].slice(-15
   width: 14px;
   height: 14px;
   flex-shrink: 0;
-  border-radius: 3px;
+  border-radius: var(--radius-compact);
   background: var(--bg-tertiary);
   color: var(--text-secondary);
   margin-top: 1px;
@@ -1185,7 +1185,7 @@ const visibleProgressEvents = computed(() => [...props.progressEvents].slice(-15
 .agent-panel-section,
 .agent-activity-panel :deep(.tool-call-card) {
   border-color: rgb(152 179 184 / 0.28);
-  border-radius: 0;
+  border-radius: var(--radius-surface);
   box-shadow: none;
 }
 
@@ -1218,7 +1218,7 @@ const visibleProgressEvents = computed(() => [...props.progressEvents].slice(-15
   color: var(--accent-danger);
   background: transparent;
   border: 1px solid currentColor;
-  border-radius: 0;
+  border-radius: var(--radius-control);
   cursor: pointer;
 }
 
@@ -1227,9 +1227,12 @@ const visibleProgressEvents = computed(() => [...props.progressEvents].slice(-15
   background: var(--accent-danger);
 }
 
-.agent-activity-panel :deep(.tool-call-status-badge),
+.agent-activity-panel :deep(.tool-call-status-badge) {
+  border-radius: var(--radius-pill);
+}
+
 .agent-activity-panel :deep(.tool-call-icon-wrap) {
-  border-radius: 0;
+  border-radius: var(--radius-compact);
 }
 
 @media (prefers-reduced-motion: reduce) {

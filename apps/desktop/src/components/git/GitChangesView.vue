@@ -987,7 +987,7 @@ const sortedStatusFiles = computed(() => {
   font-weight: 700;
   font-family: 'Geist Mono', ui-monospace, monospace;
   padding: 1px 4px;
-  border-radius: 3px;
+  border-radius: var(--radius-compact);
 }
 
 /* Status color variants */

@@ -516,7 +516,7 @@ function onExecute(tool: ToolDescriptorDto) {
   width: 22px;
   height: 22px;
   flex-shrink: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   background: var(--bg-tertiary);
   color: var(--accent-primary);
 }
@@ -669,7 +669,7 @@ function onExecute(tool: ToolDescriptorDto) {
   color: var(--text-secondary);
   background: var(--bg-tertiary);
   padding: 1px 5px;
-  border-radius: 3px;
+  border-radius: var(--radius-compact);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -692,7 +692,7 @@ function onExecute(tool: ToolDescriptorDto) {
   font-size: 9px;
   color: var(--text-secondary);
   background: var(--bg-tertiary);
-  border-radius: 3px;
+  border-radius: var(--radius-compact);
   font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
 }
 

@@ -55,6 +55,7 @@ const classes = computed(() => cn(buttonVariants({ variant: props.variant, size:
 
 <template>
   <button
+    data-slot="button"
     :type="type"
     :class="classes"
     :disabled="disabled"

@@ -324,7 +324,7 @@ const isRisky = computed(
   gap: 3px;
   padding: 3px 8px;
   border: 1px solid var(--border-muted);
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;

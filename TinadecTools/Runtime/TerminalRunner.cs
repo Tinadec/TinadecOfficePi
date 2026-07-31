@@ -54,7 +54,7 @@ internal static class TerminalRunner
                 Success: false,
                 ExitCode: -1,
                 Stdout: string.Empty,
-                Stderr: ex.Message,
+                Stderr: $"Failed to start '{executable}': {ex.Message}",
                 StdoutTruncated: false,
                 StderrTruncated: false,
                 TimedOut: false,

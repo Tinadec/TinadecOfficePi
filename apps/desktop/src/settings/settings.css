@@ -7,7 +7,7 @@
 	height: 36px;
 	padding: 0 10px;
 	border: 1px solid var(--border-default);
-	border-radius: 8px;
+	border-radius: var(--radius-control);
 	background: var(--bg-primary);
 	color: var(--text-primary);
 	font-size: 13px;
@@ -21,7 +21,7 @@
 	width: 100%;
 	padding: 8px 10px;
 	border: 1px solid var(--border-default);
-	border-radius: 8px;
+	border-radius: var(--radius-control);
 	background: var(--bg-primary);
 	color: var(--text-primary);
 	font-size: 13px;
@@ -55,7 +55,7 @@
    provides the window's bottom colour.  This keeps the settings page
    from sliding its own solid background during page transitions. */
 	background: transparent;
-	border-radius: 12px;
+	border-radius: var(--radius-panel);
 	z-index: 1;
 }
 .settings-window-controls {
@@ -111,7 +111,7 @@
 	position: relative;
 	padding: 16px 12px;
 	background: var(--bg-secondary);
-	border-radius: 12px;
+	border-radius: var(--radius-panel);
 	border: 1px solid var(--border-muted);
 	box-shadow: var(--shadow-panel);
 	overflow: auto;
@@ -143,7 +143,7 @@
 	font-size: 13px;
 	color: var(--text-secondary);
 	background: transparent;
-	border-radius: 6px;
+	border-radius: var(--radius-control);
 	cursor: pointer;
 	text-align: left;
 }
@@ -164,7 +164,7 @@
 	padding: 24px 32px;
 	overflow: auto;
 	background: var(--bg-secondary);
-	border-radius: 12px;
+	border-radius: var(--radius-panel);
 	border: 1px solid var(--border-muted);
 	box-shadow: var(--shadow-panel);
 	animation: settings-content-enter 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -704,7 +704,7 @@
 .about-brand-icon {
 	width: 56px;
 	height: 56px;
-	border-radius: 16px;
+	border-radius: var(--radius-panel);
 	background: var(--accent);
 	color: #fff;
 	display: flex;
@@ -1336,7 +1336,7 @@
 	gap: 3px;
 	min-width: 0;
 	padding: 8px 10px;
-	border-radius: 5px;
+	border-radius: var(--radius-control);
 	background: var(--bg-tertiary);
 }
 
@@ -1652,7 +1652,7 @@
 	min-width: 0;
 	padding: 10px;
 	border: 1px solid var(--border-muted);
-	border-radius: 7px;
+	border-radius: var(--radius-surface);
 	background: var(--bg-secondary);
 }
 
@@ -1958,7 +1958,7 @@
 		align-items: center;
 		gap: 6px;
 		padding: 10px;
-		border-radius: 0;
+		border-radius: var(--radius-panel);
 		min-width: 0;
 		max-width: 100%;
 		overflow-x: auto;
@@ -2247,7 +2247,7 @@
 	max-height: 85vh;
 	overflow: auto;
 	border: 1px solid var(--border-default);
-	border-radius: 14px;
+	border-radius: var(--radius-overlay);
 	background: var(--bg-primary);
 	box-shadow:
 		0 20px 60px rgba(0, 0, 0, 0.3),
@@ -2717,7 +2717,7 @@ select:focus {
 .center-resource-section {
 	padding: 14px;
 	border: 1px solid var(--border-default);
-	border-radius: 12px;
+	border-radius: var(--radius-surface);
 	background: color-mix(in srgb, var(--bg-secondary) 68%, transparent);
 }
 
@@ -2748,7 +2748,7 @@ select:focus {
 .center-resource-card,
 .center-resource-list-row {
 	border: 1px solid var(--border-default);
-	border-radius: 10px;
+	border-radius: var(--radius-surface);
 	background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
 }
 
@@ -2927,7 +2927,7 @@ select:focus {
 	margin-top: 12px;
 	padding: 10px 11px;
 	border: 1px solid var(--border-default);
-	border-radius: 9px;
+	border-radius: var(--radius-surface);
 	color: var(--text-secondary);
 	font-size: 12px;
 }
@@ -3801,16 +3801,15 @@ select:focus {
 
 .settings-page[data-ark-theme="ark"] .settings-shell {
 	grid-template-columns: 248px minmax(0, 1fr);
-	gap: 0;
-	padding: 40px 0 0;
+	gap: 12px;
+	padding: 48px 8px 8px;
 }
 
 .settings-page[data-ark-theme="ark"] .settings-nav {
 	padding: 18px 12px;
 	background: rgb(8 10 11 / 0.94);
-	border: 0;
-	border-right: 1px solid var(--ark-rule);
-	border-radius: 0;
+	border: 1px solid var(--ark-rule);
+	border-radius: var(--radius-panel);
 	box-shadow: none;
 }
 
@@ -3835,7 +3834,7 @@ select:focus {
 	padding: 8px 10px;
 	border: 0;
 	border-left: 2px solid transparent;
-	border-radius: 0;
+	border-radius: var(--radius-control);
 	color: var(--ark-muted);
 	font-size: 13px;
 }
@@ -3855,8 +3854,8 @@ select:focus {
 	margin: 0;
 	padding: clamp(28px, 4vw, 56px);
 	background: rgb(8 10 11 / 0.72);
-	border: 0;
-	border-radius: 0;
+	border: 1px solid var(--ark-rule);
+	border-radius: var(--radius-panel);
 	box-shadow: none;
 }
 
@@ -3882,7 +3881,7 @@ select:focus {
 .settings-page[data-ark-theme="ark"] input,
 .settings-page[data-ark-theme="ark"] textarea {
 	border-color: var(--ark-rule);
-	border-radius: 0;
+	border-radius: var(--radius-control);
 	background: rgb(8 10 11 / 0.82);
 	color: var(--ark-paper);
 }
@@ -3902,7 +3901,7 @@ select:focus {
 .settings-page[data-ark-theme="ark"] .general-settings-group,
 .settings-page[data-ark-theme="ark"] .about-section {
 	border-color: var(--ark-rule);
-	border-radius: 0;
+	border-radius: var(--radius-surface);
 	background: rgb(8 10 11 / 0.56);
 	box-shadow: none;
 }
@@ -3929,7 +3928,7 @@ select:focus {
 }
 
 .settings-page[data-ark-theme="ark"] [data-slot="button"] {
-	border-radius: 0;
+	border-radius: var(--radius-control);
 }
 
 .pi-model-page {
@@ -3978,6 +3977,8 @@ select:focus {
 	grid-template-columns: repeat(3, minmax(0, 1fr));
 	margin: 18px 0;
 	border: 1px solid var(--ark-rule);
+	border-radius: var(--radius-surface);
+	overflow: hidden;
 	background: rgb(8 10 11 / 0.58);
 }
 
@@ -4004,6 +4005,8 @@ select:focus {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) minmax(260px, 0.36fr);
 	border: 1px solid var(--ark-rule);
+	border-radius: var(--radius-surface);
+	overflow: hidden;
 	background: rgb(8 10 11 / 0.56);
 }
 
@@ -4060,7 +4063,7 @@ select:focus {
 	min-width: 0;
 	padding: 10px 0;
 	border: 0;
-	border-radius: 0;
+	border-radius: var(--radius-control);
 	background: transparent;
 	color: var(--ark-paper);
 	cursor: pointer;
@@ -4109,7 +4112,7 @@ select:focus {
 .pi-model-row-actions [data-slot="button"] {
 	width: 32px;
 	height: 32px;
-	border-radius: 0;
+	border-radius: var(--radius-compact);
 }
 
 .pi-model-reasoning {
@@ -4163,8 +4166,7 @@ select:focus {
 		display: flex;
 		overflow-x: auto;
 		padding: 6px;
-		border-right: 0;
-		border-bottom: 1px solid var(--ark-rule);
+		border: 1px solid var(--ark-rule);
 	}
 
 	.settings-page[data-ark-theme="ark"] .settings-nav-header {
@@ -4237,7 +4239,7 @@ select:focus {
 	max-height: calc(100vh - 48px);
 	overflow: auto;
 	border: 1px solid var(--ark-rule);
-	border-radius: 0;
+	border-radius: var(--radius-overlay);
 	background: var(--ark-ink);
 	box-shadow: 12px 12px 0 rgb(0 0 0 / 0.45);
 }
@@ -4252,6 +4254,8 @@ select:focus {
 	grid-template-columns: repeat(2, minmax(0, 1fr));
 	margin-bottom: 18px;
 	border: 1px solid var(--ark-rule);
+	border-radius: var(--radius-control);
+	overflow: hidden;
 }
 
 .pi-model-kind-select button {

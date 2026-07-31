@@ -361,7 +361,7 @@ onBeforeUnmount(() => {
   margin: 0 0 16px;
   padding: 11px 12px;
   border: 1px solid var(--border-default, #1a1f29);
-  border-radius: 7px;
+  border-radius: var(--radius-surface);
   background: color-mix(in srgb, var(--bg-secondary, #11151c) 76%, transparent);
 }
 
@@ -388,7 +388,7 @@ onBeforeUnmount(() => {
   margin-bottom: 16px;
   padding: 10px 11px;
   border: 1px solid color-mix(in srgb, var(--accent-danger, #f85149) 30%, transparent);
-  border-radius: 7px;
+  border-radius: var(--radius-surface);
   background: color-mix(in srgb, var(--accent-danger, #f85149) 9%, transparent);
   color: var(--accent-danger, #f85149);
 }

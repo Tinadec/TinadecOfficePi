@@ -116,7 +116,9 @@ public static class CommandRunner
                 Stderr = result.Stderr,
                 TimedOut = result.TimedOut,
                 DurationMs = result.DurationMs,
-                SandboxError = result.Error,
+                SandboxError = result.Error ?? (result.ExitCode < 0 && RuntimePrerequisites.IsBashExecutable(args.Executable)
+                    ? RuntimePrerequisites.BashError
+                    : null),
                 StdoutTruncated = result.StdoutTruncated,
                 StderrTruncated = result.StderrTruncated
             };

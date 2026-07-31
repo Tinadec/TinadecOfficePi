@@ -174,7 +174,7 @@ const flatSpans = computed(() => {
 .trace-item-color {
   width: 4px;
   height: 36px;
-  border-radius: 2px;
+  border-radius: var(--radius-compact);
   flex-shrink: 0;
 }
 .trace-item-name { font-size: 13px; font-weight: 500; line-height: 1.4; }

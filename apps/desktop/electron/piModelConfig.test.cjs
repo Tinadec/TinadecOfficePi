@@ -5,8 +5,10 @@ const path = require("node:path");
 const test = require("node:test");
 
 const {
+	configurePiModelConfig,
 	deletePiModel,
 	listPiModelConfigs,
+	piModelPaths,
 	savePiModel,
 } = require("./piModelConfig.cjs");
 
@@ -28,6 +30,45 @@ test.after(() => {
 		maxRetries: 3,
 		retryDelay: 50,
 	});
+});
+
+test("resolves the Pi SDK from injected packaged resources", () => {
+	const resourcesPath = path.join(os.tmpdir(), "tinadec-packaged-resources");
+	configurePiModelConfig({ resourcesPath });
+	try {
+		assert.equal(
+			piModelPaths().authStorageModule,
+			path.join(
+				resourcesPath,
+				"runtime",
+				"services",
+				"node_modules",
+				"@earendil-works",
+				"pi-coding-agent",
+				"dist",
+				"core",
+				"auth-storage.js",
+			),
+		);
+	} finally {
+		configurePiModelConfig();
+	}
+});
+
+test("keeps repository SDK resolution as the development default", () => {
+	const root = path.join(os.tmpdir(), "tinadec-development-root");
+	assert.equal(
+		piModelPaths(root).authStorageModule,
+		path.join(
+			root,
+			"node_modules",
+			"@earendil-works",
+			"pi-coding-agent",
+			"dist",
+			"core",
+			"auth-storage.js",
+		),
+	);
 });
 
 test("stores built-in provider credentials in the isolated Pi agent directory", async () => {

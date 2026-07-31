@@ -416,14 +416,14 @@ const hasActivity = computed(
 .agent-banner-progress-bar {
   width: 60px;
   height: 4px;
-  border-radius: 2px;
+  border-radius: var(--radius-compact);
   background: var(--bg-tertiary);
   overflow: hidden;
 }
 
 .agent-banner-progress-fill {
   height: 100%;
-  border-radius: 2px;
+  border-radius: var(--radius-compact);
   background: var(--accent-primary);
   transition: width 0.3s ease;
 }

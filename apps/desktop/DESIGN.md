@@ -54,7 +54,7 @@ Rules:
 - Main center width: 1180px maximum, fluid below it.
 - Settings shell: 220px navigation plus a flexible work surface.
 - Center rhythm: 8px compact, 12px control, 16px group, 24px major separation.
-- Corners: 6px controls, 8px panels and repeated resource cards. Pills are status/count-only.
+- Corners: 4px compact targets, 6px controls, 8px repeated resource cards, 10px overlays, and 12px major shell panels. Pills are status/count-only.
 - The settings navigation becomes horizontal at 900px. Center inspectors remain beside their resource surface above 700px and collapse below it.
 
 ## 5. Components

@@ -401,7 +401,7 @@ onBeforeUnmount(() => {
   width: 30px;
   height: 30px;
   flex: none;
-  border-radius: 7px;
+  border-radius: var(--radius-surface);
   background: color-mix(in srgb, var(--level) 14%, transparent);
   color: var(--level);
 }

@@ -666,7 +666,7 @@ watch(theme, (t) => {
   height: 18px;
   background: #30363d;
   border: none;
-  border-radius: 9px;
+  border-radius: var(--radius-overlay);
   cursor: pointer;
   transition: background 0.15s;
 }

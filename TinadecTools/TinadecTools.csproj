@@ -9,6 +9,13 @@
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <BundledRipgrepFileName Condition="'$(BundledRipgrepFileName)' == '' and '$(RuntimeIdentifier)' != '' and $([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win-'))">rg.exe</BundledRipgrepFileName>
+    <BundledRipgrepFileName Condition="'$(BundledRipgrepFileName)' == '' and '$(RuntimeIdentifier)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">rg.exe</BundledRipgrepFileName>
+    <BundledRipgrepFileName Condition="'$(BundledRipgrepFileName)' == ''">rg</BundledRipgrepFileName>
+    <BundledRipgrepPath Condition="'$(BundledRipgrepPath)' == ''">$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../native/rg/$(BundledRipgrepFileName)'))</BundledRipgrepPath>
+  </PropertyGroup>
+
   <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
       <_Parameter1>TinadecTools.Tests</_Parameter1>
@@ -35,12 +42,27 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\native\rg\rg.exe" Condition="Exists('..\native\rg\rg.exe')">
+    <None Include="$(BundledRipgrepPath)" Condition="Exists('$(BundledRipgrepPath)')">
+      <Link>$(BundledRipgrepFileName)</Link>
+      <TargetPath>$(BundledRipgrepFileName)</TargetPath>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="..\native\rg\rg" Condition="Exists('..\native\rg\rg')">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>
   </ItemGroup>
+
+  <Target Name="ValidateBundledRipgrep" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Error Condition="!Exists('$(BundledRipgrepPath)')"
+           Text="Required bundled ripgrep binary is missing: '$(BundledRipgrepPath)'. Release builds and all publishes require staging to supply $(BundledRipgrepFileName); ordinary Debug builds may use TINADEC_TOOLS_RG_PATH or PATH." />
+  </Target>
+
+  <Target Name="ValidateBundledRipgrepForReleaseBuild"
+          BeforeTargets="PrepareForBuild"
+          Condition="'$(Configuration)' == 'Release'"
+          DependsOnTargets="ValidateBundledRipgrep" />
+
+  <Target Name="ValidateBundledRipgrepForPublish"
+          BeforeTargets="Publish"
+          Condition="'$(Configuration)' != 'Release'"
+          DependsOnTargets="ValidateBundledRipgrep" />
 
 </Project>

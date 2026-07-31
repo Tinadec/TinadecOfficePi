@@ -428,7 +428,7 @@ onMounted(() => {
   justify-content: center;
   width: 16px;
   height: 16px;
-  border-radius: 3px;
+  border-radius: var(--radius-compact);
   color: var(--text-muted);
 }
 .code-tab-close:hover {

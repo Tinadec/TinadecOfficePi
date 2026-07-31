@@ -786,7 +786,7 @@ onMounted(() => {
 .pe-version-field {
   padding: 1px 6px;
   background: rgba(88, 166, 255, 0.1);
-  border-radius: 3px;
+  border-radius: var(--radius-compact);
   font-size: 10px;
   font-family: var(--font-mono, monospace);
 }
@@ -907,7 +907,7 @@ onMounted(() => {
   flex: 1;
   height: 6px;
   background: rgba(255, 255, 255, 0.06);
-  border-radius: 3px;
+  border-radius: var(--radius-compact);
   overflow: hidden;
 }
 .pe-score-fill {

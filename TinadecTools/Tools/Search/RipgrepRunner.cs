@@ -87,7 +87,14 @@ internal static class RipgrepRunner
 
         var psi = BuildProcessStartInfo(rgPath, args, searchPath);
         using var process = new Process { StartInfo = psi };
-        process.Start();
+        try
+        {
+            process.Start();
+        }
+        catch (Exception ex)
+        {
+            return Fail($"ripgrep at '{rgPath}' could not be started: {ex.Message}");
+        }
 
         // 并发读取 stderr，防止死锁
         var stderrTask = process.StandardError.ReadToEndAsync(CancellationToken.None);

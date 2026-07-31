@@ -33,6 +33,7 @@ function onInput(event: Event) {
 
 <template>
   <input
+    data-slot="input"
     :type="type"
     :value="modelValue"
     :placeholder="placeholder"

@@ -457,7 +457,7 @@ function onViewDetails(exec: ToolExecutionTimelineItemDto) {
   width: 22px;
   height: 22px;
   flex-shrink: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-control);
   background: var(--bg-tertiary);
   color: var(--accent-primary);
 }

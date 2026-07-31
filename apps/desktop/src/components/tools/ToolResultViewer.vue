@@ -319,7 +319,7 @@ function toggle() {
   color: var(--text-primary);
   background: var(--bg-tertiary);
   padding: 1px 4px;
-  border-radius: 3px;
+  border-radius: var(--radius-compact);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

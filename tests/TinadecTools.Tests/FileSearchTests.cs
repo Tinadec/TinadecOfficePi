@@ -12,7 +12,7 @@ public sealed class FileSearchTests : IDisposable
     public FileSearchTests()
     {
         _originalRgEnv = Environment.GetEnvironmentVariable(RipgrepRunner.RgPathEnvVar);
-        _rgPath = FindRgOnPath();
+        _rgPath = RipgrepTestPrerequisite.FindPath();
         if (_rgPath is not null)
             Environment.SetEnvironmentVariable(RipgrepRunner.RgPathEnvVar, _rgPath);
     }
@@ -29,10 +29,9 @@ public sealed class FileSearchTests : IDisposable
 
     // ── 基础搜索 ──────────────────────────────────────────────────────────────
 
-    [Fact]
+    [RipgrepFact]
     public async Task BasicMatch_ReturnsMatchLineAndFileHash()
     {
-        if (_rgPath is null) return;
         var dir = CreateTempDir();
         WriteFile(dir, "a.txt", "hello world\nsecond line\n");
 
@@ -48,10 +47,9 @@ public sealed class FileSearchTests : IDisposable
         Assert.NotEmpty(resp.FileHashes);
     }
 
-    [Fact]
+    [RipgrepFact]
     public async Task Submatches_ContainMatchedText()
     {
-        if (_rgPath is null) return;
         var dir = CreateTempDir();
         WriteFile(dir, "b.txt", "foo bar baz\n");
 
@@ -67,10 +65,9 @@ public sealed class FileSearchTests : IDisposable
 
     // ── Glob / Type 过滤 ──────────────────────────────────────────────────────
 
-    [Fact]
+    [RipgrepFact]
     public async Task GlobFilter_OnlyMatchesSpecifiedExtension()
     {
-        if (_rgPath is null) return;
         var dir = CreateTempDir();
         WriteFile(dir, "keep.cs",    "target content\n");
         WriteFile(dir, "ignore.txt", "target content\n");
@@ -83,10 +80,9 @@ public sealed class FileSearchTests : IDisposable
         Assert.All(resp.Lines, l => Assert.EndsWith(".cs", l.FilePath));
     }
 
-    [Fact]
+    [RipgrepFact]
     public async Task TypeFilter_OnlyMatchesCsharpFiles()
     {
-        if (_rgPath is null) return;
         var dir = CreateTempDir();
         WriteFile(dir, "code.cs",   "needle here\n");
         WriteFile(dir, "notes.txt", "needle here\n");
@@ -101,10 +97,9 @@ public sealed class FileSearchTests : IDisposable
 
     // ── 大小写 ────────────────────────────────────────────────────────────────
 
-    [Fact]
+    [RipgrepFact]
     public async Task CaseSensitiveFalse_MatchesUpperAndLower()
     {
-        if (_rgPath is null) return;
         var dir = CreateTempDir();
         WriteFile(dir, "c.txt", "HELLO\nhello\nHeLLo\n");
 
@@ -116,10 +111,9 @@ public sealed class FileSearchTests : IDisposable
         Assert.Equal(3, resp.Lines.Count(l => l.IsMatch));
     }
 
-    [Fact]
+    [RipgrepFact]
     public async Task CaseSensitiveTrue_RequiresExactCase()
     {
-        if (_rgPath is null) return;
         var dir = CreateTempDir();
         WriteFile(dir, "d.txt", "HELLO\nhello\n");
 
@@ -134,10 +128,9 @@ public sealed class FileSearchTests : IDisposable
 
     // ── FixedStrings ──────────────────────────────────────────────────────────
 
-    [Fact]
+    [RipgrepFact]
     public async Task FixedStrings_TreatsRegexCharsAsLiteral()
     {
-        if (_rgPath is null) return;
         var dir = CreateTempDir();
         WriteFile(dir, "e.txt", "foo.bar\nfooXbar\n");
 
@@ -153,10 +146,9 @@ public sealed class FileSearchTests : IDisposable
 
     // ── ContextLines ──────────────────────────────────────────────────────────
 
-    [Fact]
+    [RipgrepFact]
     public async Task ContextLines_IncludesAdjacentLinesWithLineNumbers()
     {
-        if (_rgPath is null) return;
         var dir = CreateTempDir();
         WriteFile(dir, "f.txt", "before\ntarget\nafter\n");
 
@@ -175,10 +167,9 @@ public sealed class FileSearchTests : IDisposable
 
     // ── MaxResults 截断 ───────────────────────────────────────────────────────
 
-    [Fact]
+    [RipgrepFact]
     public async Task MaxResults_TruncatesResultsAndSetsTruncatedFlag()
     {
-        if (_rgPath is null) return;
         var dir = CreateTempDir();
         // 写10行都能命中
         WriteFile(dir, "g.txt", string.Join("\n", Enumerable.Range(1, 10).Select(i => $"match {i}")) + "\n");
@@ -194,10 +185,9 @@ public sealed class FileSearchTests : IDisposable
 
     // ── 无命中 ────────────────────────────────────────────────────────────────
 
-    [Fact]
+    [RipgrepFact]
     public async Task NoMatch_ReturnsSuccessWithEmptyLines()
     {
-        if (_rgPath is null) return;
         var dir = CreateTempDir();
         WriteFile(dir, "h.txt", "nothing relevant here\n");
 
@@ -259,10 +249,22 @@ public sealed class FileSearchTests : IDisposable
     private static void WriteFile(string dir, string name, string content) =>
         File.WriteAllText(Path.Combine(dir, name), content);
 
-    private static string? FindRgOnPath()
+}
+
+internal sealed class RipgrepFactAttribute : FactAttribute
+{
+    public RipgrepFactAttribute()
     {
-        var exe = OperatingSystem.IsWindows() ? "rg.exe" : "rg";
-        var paths = Environment.GetEnvironmentVariable("PATH")?.Split(Path.PathSeparator) ?? [];
-        return paths.Select(d => Path.Combine(d, exe)).FirstOrDefault(File.Exists);
+        if (RipgrepTestPrerequisite.FindPath() is null)
+            Skip = $"ripgrep integration test requires rg on PATH or {RipgrepRunner.RgPathEnvVar}.";
+    }
+}
+
+internal static class RipgrepTestPrerequisite
+{
+    public static string? FindPath()
+    {
+        var path = RipgrepRunner.ResolveRgPath();
+        return File.Exists(path) ? Path.GetFullPath(path) : null;
     }
 }

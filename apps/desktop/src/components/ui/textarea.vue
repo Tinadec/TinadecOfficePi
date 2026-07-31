@@ -33,6 +33,7 @@ function onInput(event: Event) {
 
 <template>
   <textarea
+    data-slot="textarea"
     :value="modelValue"
     :placeholder="placeholder"
     :disabled="disabled"

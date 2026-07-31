@@ -585,7 +585,7 @@ onUnmounted(() => {
         '--chat-left': '268px',
         '--chat-right': rightRailCollapsed ? '52px' : `${rightRailWidth + 8}px`,
         '--chat-top': '40px',
-        '--chat-bottom': '0px'
+        '--chat-bottom': '8px'
       }"
     >
       <ChatPanel

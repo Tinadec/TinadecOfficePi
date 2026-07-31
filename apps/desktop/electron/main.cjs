@@ -1,4 +1,3 @@
-require("./winhide.cjs");
 const {
 	app,
 	BrowserWindow,
@@ -8,6 +7,10 @@ const {
 	screen,
 	shell,
 } = require("electron");
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) app.quit();
+
+require("./winhide.cjs");
 const path = require("node:path");
 const {
 	loadAppConfig,
@@ -19,6 +22,7 @@ const {
 	stopBundledServices,
 } = require("./serviceManager.cjs");
 const {
+	configurePiModelConfig,
 	deletePiModel,
 	listPiModelConfigs,
 	savePiModel,
@@ -62,19 +66,25 @@ const {
 	setEnabled,
 } = require("./petStore.cjs");
 
-protocol.registerSchemesAsPrivileged([
-	{
-		scheme: "tinadec-pet-preview",
-		privileges: {
-			standard: true,
-			secure: true,
-			supportFetchAPI: true,
-			corsEnabled: true,
-		},
-	},
-]);
 
-const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
+if (hasSingleInstanceLock) {
+	protocol.registerSchemesAsPrivileged([
+		{
+			scheme: "tinadec-pet-preview",
+			privileges: {
+				standard: true,
+				secure: true,
+				supportFetchAPI: true,
+				corsEnabled: true,
+			},
+		},
+	]);
+}
+
+const devServerUrl = app.isPackaged
+	? undefined
+	: process.env.VITE_DEV_SERVER_URL;
+const isDev = Boolean(devServerUrl);
 
 if (process.platform === "win32") {
 	app.setAppUserModelId("com.tinadec.office");
@@ -82,6 +92,59 @@ if (process.platform === "win32") {
 
 function appConfigFile() {
 	return path.join(app.getPath("userData"), "settings.json");
+}
+
+function focusMainWindow() {
+	const win =
+		BrowserWindow.getAllWindows().find(
+			(candidate) => candidate._isTinadecMain && !candidate.isDestroyed(),
+		) ?? BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
+	if (!win) return;
+	if (win.isMinimized()) win.restore();
+	if (!win.isVisible()) win.show();
+	win.focus();
+}
+
+if (hasSingleInstanceLock) {
+	app.on("second-instance", focusMainWindow);
+}
+
+let cleanupPromise;
+let cleanupComplete = false;
+let quitAfterCleanupScheduled = false;
+let restartRequested = false;
+
+function cleanupForExit() {
+	if (cleanupPromise) return cleanupPromise;
+	cleanupPromise = (async () => {
+		try {
+			destroyAllTerminals();
+		} catch (error) {
+			console.error("[main] Failed to stop terminals:", error);
+		}
+		try {
+			await stopBundledServices();
+		} catch (error) {
+			console.error("[main] Failed to stop bundled services:", error);
+		}
+		try {
+			persistPanelStatesForQuit();
+			closeAllPetWindows();
+		} catch (error) {
+			console.error("[main] Failed to persist window state:", error);
+		}
+	})();
+	return cleanupPromise;
+}
+
+async function restartApplication() {
+	if (restartRequested) return false;
+	restartRequested = true;
+	await cleanupForExit();
+	app.relaunch();
+	cleanupComplete = true;
+	app.quit();
+	return true;
 }
 
 async function createWindow() {
@@ -119,7 +182,7 @@ async function createWindow() {
 	});
 
 	if (isDev) {
-		await win.loadURL(process.env.VITE_DEV_SERVER_URL);
+		await win.loadURL(devServerUrl);
 	} else {
 		await win.loadFile(path.join(__dirname, "..", "dist", "index.html"));
 	}
@@ -160,10 +223,7 @@ ipcMain.handle("tinadec:gateway-url-save", (_event, gatewayUrl) =>
 ipcMain.handle("tinadec:gateway-url-reset", () =>
 	resetGatewayUrl(appConfigFile()),
 );
-ipcMain.handle("tinadec:restart", () => {
-	app.relaunch();
-	app.exit(0);
-});
+ipcMain.handle("tinadec:restart", restartApplication);
 
 ipcMain.on("tinadec:minimize", (event) => {
 	BrowserWindow.fromWebContents(event.sender)?.minimize();
@@ -357,15 +417,26 @@ ipcMain.on("tinadec:broadcast-theme", (_event, theme, accentColor) => {
 // Register terminal IPC handlers
 registerTerminalIpc();
 
-// Persist panel states before quit and clean up terminals
-app.on("before-quit", () => {
-	stopBundledServices();
-	destroyAllTerminals();
-	persistPanelStatesForQuit();
-	closeAllPetWindows();
+// Electron does not await before-quit listeners, so defer the quit once while
+// the owned service processes and terminals are being torn down.
+app.on("before-quit", (event) => {
+	if (cleanupComplete || !hasSingleInstanceLock) return;
+	event.preventDefault();
+	if (quitAfterCleanupScheduled) return;
+	quitAfterCleanupScheduled = true;
+	void cleanupForExit().finally(() => {
+		cleanupComplete = true;
+		app.quit();
+	});
 });
 
-app.whenReady().then(async () => {
+if (hasSingleInstanceLock) app.whenReady().then(async () => {
+	const userDataPath = app.getPath("userData");
+	const agentDir = path.join(userDataPath, "pi-agent");
+	configurePiModelConfig({
+		resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
+		agentDir,
+	});
 	process.env.TINADEC_RESOLVED_GATEWAY_URL = loadAppConfig(
 		appConfigFile(),
 	).gateway_url;
@@ -375,14 +446,16 @@ app.whenReady().then(async () => {
 			isPackaged: app.isPackaged,
 			gatewayUrl: process.env.TINADEC_RESOLVED_GATEWAY_URL,
 			resourcesPath: process.resourcesPath,
-			userDataPath: app.getPath("userData"),
+			userDataPath,
 		});
 		process.env.TINADEC_BUNDLED_CORE = services.ownsCore ? "1" : "0";
 	} catch (error) {
 		dialog.showErrorBox(
 			"Tinadec services failed to start",
-			error instanceof Error ? error.message : String(error),
+			`${error instanceof Error ? error.message : String(error)}\n\nService logs: ${path.join(userDataPath, "runtime", "logs")}`,
 		);
+		app.quit();
+		return;
 	}
 	protocol.handle("tinadec-pet-preview", async (request) => {
 		try {
@@ -416,6 +489,12 @@ app.whenReady().then(async () => {
 			await createWindow();
 		}
 	});
+}).catch((error) => {
+	dialog.showErrorBox(
+		"TinadecOffice failed to start",
+		error instanceof Error ? error.message : String(error),
+	);
+	app.quit();
 });
 
 app.on("window-all-closed", () => {
