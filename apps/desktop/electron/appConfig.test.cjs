@@ -13,6 +13,9 @@ const {
 
 test('normalizes and validates Gateway URLs', () => {
   assert.equal(normalizeGatewayUrl(' https://office.example.com/ '), 'https://office.example.com');
+  assert.equal(normalizeGatewayUrl('http://localhost:48730/'), 'http://localhost:48730');
+  assert.equal(normalizeGatewayUrl('http://127.0.0.1:48730/'), DEFAULT_GATEWAY_URL);
+  assert.throws(() => normalizeGatewayUrl('http://office.example.com'), /must use HTTPS/);
   assert.throws(() => normalizeGatewayUrl('file:///tmp/gateway'), /HTTP or HTTPS/);
   assert.throws(() => normalizeGatewayUrl('https://user@example.com'), /credentials/);
 });

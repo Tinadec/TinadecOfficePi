@@ -1,17 +1,32 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Keep NSIS/portable temp off C: — full system TEMP makes makensis mmap fail.
+// Keep NSIS/ZIP temp off C: — full system TEMP makes makensis mmap fail.
 const desktopDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const releaseDir = join(desktopDir, "release");
+const builderCli = join(
+	desktopDir,
+	"..",
+	"..",
+	"node_modules",
+	"electron-builder",
+	"cli.js",
+);
 const tmp = join(desktopDir, ".runtime-cache", "tmp");
+mkdirSync(releaseDir, { recursive: true });
 mkdirSync(tmp, { recursive: true });
 
+for (const file of readdirSync(releaseDir, { withFileTypes: true })) {
+	if (file.isFile() && file.name.endsWith("-portable.exe"))
+		rmSync(join(releaseDir, file.name), { force: true });
+}
+
 const result = spawnSync(
-	process.platform === "win32" ? "npx.cmd" : "npx",
+	process.execPath,
 	[
-		"electron-builder",
+		builderCli,
 		"--win",
 		"--x64",
 		"--publish",
@@ -28,7 +43,6 @@ const result = spawnSync(
 		},
 		stdio: "inherit",
 		windowsHide: true,
-		shell: process.platform === "win32",
 	},
 );
 

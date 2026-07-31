@@ -72,6 +72,19 @@ test("development and custom gateways do not claim the bundled Core", async () =
 	);
 });
 
+test("cancelled startup cannot spawn bundled services", async () => {
+	const controller = new AbortController();
+	controller.abort();
+	await assert.rejects(
+		startBundledServices({
+			isPackaged: true,
+			gatewayUrl: DEFAULT_GATEWAY_URL,
+			signal: controller.signal,
+		}),
+		{ name: "AbortError", message: "Bundled service startup cancelled." },
+	);
+});
+
 test("bundled runtime paths use the staged Node and native tool names", () => {
 	const windows = bundledRuntimePaths("C:\\resources", "win32");
 	const linux = bundledRuntimePaths("/opt/resources", "linux");

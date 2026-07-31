@@ -18,6 +18,10 @@ function normalizeGatewayUrl(value) {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new Error('Gateway URL must use HTTP or HTTPS.');
   }
+  const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
+  if (url.protocol === 'http:' && !loopback) {
+    throw new Error('Remote Gateway URLs must use HTTPS.');
+  }
   if (url.username || url.password || url.search || url.hash) {
     throw new Error('Gateway URL cannot contain credentials, a query, or a fragment.');
   }

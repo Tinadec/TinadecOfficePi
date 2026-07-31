@@ -117,7 +117,7 @@ function verifyInstallableArtifacts() {
 		process.platform === "win32"
 			? [
 					["Windows NSIS installer", (name) => name.endsWith("-setup.exe")],
-					["Windows portable package", (name) => name.endsWith("-portable.exe")],
+					["Windows ZIP package", (name) => name.endsWith("-win-x64.zip")],
 				]
 			: process.platform === "darwin"
 				? [
@@ -216,8 +216,8 @@ function verifyRuntime(resources) {
 	const services = requireDirectory(join(runtime, "services"), "Runtime services");
 	const executableSuffix = process.platform === "win32" ? ".exe" : "";
 	const requiredPaths = [
-		requireExecutable(
-			join(runtime, "bun", `bun${executableSuffix}`),
+			requireExecutable(
+			join(runtime, "node", `node${executableSuffix}`),
 			"Bundled JavaScript runtime",
 		),
 		requireFile(
@@ -231,6 +231,10 @@ function verifyRuntime(resources) {
 		requireExecutable(
 			join(runtime, "tools", `TinadecTools${executableSuffix}`),
 			"Bundled TinadecTools executable",
+		),
+		requireExecutable(
+			join(runtime, "tools", `rg${executableSuffix}`),
+			"Bundled ripgrep executable",
 		),
 	];
 

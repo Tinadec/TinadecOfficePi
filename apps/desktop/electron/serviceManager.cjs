@@ -43,6 +43,13 @@ function shouldStartBundledServices(isPackaged, gatewayUrl) {
 	}
 }
 
+function abortIfRequested(signal) {
+	if (!signal?.aborted) return;
+	const error = new Error("Bundled service startup cancelled.");
+	error.name = "AbortError";
+	throw error;
+}
+
 function matchesServiceIdentity(service, health) {
 	if (!health || typeof health !== "object" || Array.isArray(health)) {
 		return false;
@@ -159,11 +166,14 @@ function createServiceManager({
 		service,
 		child,
 		label,
+		signal,
 		timeoutMs = 30_000,
 	) {
 		const deadline = Date.now() + timeoutMs;
 		while (Date.now() < deadline) {
+			abortIfRequested(signal);
 			const probe = await probeService(url, service, { fetchImpl });
+			abortIfRequested(signal);
 			if (probe.status === "ready") return;
 			if (probe.status === "mismatch") {
 				throw new Error(
@@ -244,11 +254,14 @@ function createServiceManager({
 		gatewayUrl,
 		resourcesPath,
 		userDataPath,
+		signal,
 	}) {
 		if (!shouldStartBundledServices(isPackaged, gatewayUrl)) {
 			return { started: false, ownsCore: false };
 		}
+		abortIfRequested(signal);
 		if (stopping) await stopping;
+		abortIfRequested(signal);
 		if (!resourcesPath) {
 			throw new Error("Electron resources path is unavailable.");
 		}
@@ -275,6 +288,7 @@ function createServiceManager({
 		try {
 			const coreUrl = `${CORE_URL}/api/v1/health`;
 			const coreProbe = await probeService(coreUrl, "core", { fetchImpl });
+			abortIfRequested(signal);
 			if (coreProbe.status === "mismatch") {
 				throw new Error(
 					`TinadecPi Core endpoint at ${coreUrl} is occupied by an unexpected service or version.`,
@@ -296,13 +310,14 @@ function createServiceManager({
 					logsDir,
 				);
 				started = true;
-				await waitForService(coreUrl, "core", core, "TinadecPi Core");
+				await waitForService(coreUrl, "core", core, "TinadecPi Core", signal);
 			}
 
 			const gatewayHealthUrl = `${DEFAULT_GATEWAY_URL}/api/v1/health`;
 			const gatewayProbe = await probeService(gatewayHealthUrl, "gateway", {
 				fetchImpl,
 			});
+			abortIfRequested(signal);
 			if (gatewayProbe.status === "mismatch") {
 				throw new Error(
 					`TinadecOffice Gateway endpoint at ${gatewayHealthUrl} is occupied by an unexpected service or version.`,
@@ -329,6 +344,7 @@ function createServiceManager({
 					"gateway",
 					gateway,
 					"TinadecOffice Gateway",
+					signal,
 				);
 			}
 

@@ -30,7 +30,7 @@ jobs:
             artifact: TinadecOffice-windows-x64
             paths: |
               apps/desktop/release/*-setup.exe
-              apps/desktop/release/*-portable.exe
+              apps/desktop/release/*-win-x64.zip
           - name: macOS x64
             os: macos-15-intel
             script: dist:mac
@@ -77,11 +77,6 @@ jobs:
         with:
           node-version: 22
           cache: npm
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.14
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
@@ -135,10 +130,10 @@ jobs:
           $release = Resolve-Path 'apps/desktop/release'
           $packages = @(
             Join-Path $release 'win-unpacked/TinadecOffice.exe'
-            Get-ChildItem -LiteralPath $release -File | Where-Object { $_.Name -match '-(setup|portable)\.exe$' } | ForEach-Object FullName
+            Get-ChildItem -LiteralPath $release -File | Where-Object { $_.Name -match '-setup\.exe$' } | ForEach-Object FullName
           )
-          if ($packages.Count -ne 3) {
-            throw "Expected the unpacked executable, setup, and portable package; found $($packages.Count)."
+          if ($packages.Count -ne 2) {
+            throw "Expected the unpacked executable and setup package; found $($packages.Count)."
           }
           foreach ($package in $packages) {
             $signature = Get-AuthenticodeSignature -LiteralPath $package

@@ -113,10 +113,14 @@ let cleanupPromise;
 let cleanupComplete = false;
 let quitAfterCleanupScheduled = false;
 let restartRequested = false;
+let bundledCoreOwned = false;
+let serviceStartupController = null;
 
 function cleanupForExit() {
 	if (cleanupPromise) return cleanupPromise;
 	cleanupPromise = (async () => {
+		serviceStartupController?.abort();
+		bundledCoreOwned = false;
 		try {
 			destroyAllTerminals();
 		} catch (error) {
@@ -217,6 +221,7 @@ ipcMain.handle("tinadec:open-project", async () => {
 });
 
 ipcMain.handle("tinadec:app-config", () => loadAppConfig(appConfigFile()));
+ipcMain.handle("tinadec:uses-bundled-core", () => bundledCoreOwned);
 ipcMain.handle("tinadec:gateway-url-save", (_event, gatewayUrl) =>
 	saveGatewayUrl(appConfigFile(), gatewayUrl),
 );
@@ -441,22 +446,6 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
 		appConfigFile(),
 	).gateway_url;
 	process.env.TINADEC_BUNDLED_CORE = "0";
-	try {
-		const services = await startBundledServices({
-			isPackaged: app.isPackaged,
-			gatewayUrl: process.env.TINADEC_RESOLVED_GATEWAY_URL,
-			resourcesPath: process.resourcesPath,
-			userDataPath,
-		});
-		process.env.TINADEC_BUNDLED_CORE = services.ownsCore ? "1" : "0";
-	} catch (error) {
-		dialog.showErrorBox(
-			"Tinadec services failed to start",
-			`${error instanceof Error ? error.message : String(error)}\n\nService logs: ${path.join(userDataPath, "runtime", "logs")}`,
-		);
-		app.quit();
-		return;
-	}
 	protocol.handle("tinadec-pet-preview", async (request) => {
 		try {
 			const url = new URL(request.url);
@@ -476,7 +465,32 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
 			});
 		}
 	});
-	await createWindow();
+	const mainWindow = await createWindow();
+	const startupController = new AbortController();
+	serviceStartupController = startupController;
+	void startBundledServices({
+		isPackaged: app.isPackaged,
+		gatewayUrl: process.env.TINADEC_RESOLVED_GATEWAY_URL,
+		resourcesPath: process.resourcesPath,
+		userDataPath,
+		signal: startupController.signal,
+	})
+		.then((services) => {
+			bundledCoreOwned = services.ownsCore;
+		})
+		.catch((error) => {
+			if (startupController.signal.aborted || mainWindow.isDestroyed()) return;
+			void dialog.showMessageBox(mainWindow, {
+				type: "error",
+				title: "Tinadec services failed to start",
+				message: `${error instanceof Error ? error.message : String(error)}\n\nService logs: ${path.join(userDataPath, "runtime", "logs")}`,
+			});
+		})
+		.finally(() => {
+			if (serviceStartupController === startupController) {
+				serviceStartupController = null;
+			}
+		});
 	const downloadedPets = await listDownloaded().catch(() => []);
 	await Promise.all(
 		downloadedPets

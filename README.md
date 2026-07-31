@@ -57,10 +57,12 @@ npm run dist:linux -w @tinadec/desktop
 
 The `Desktop builds` GitHub Actions workflow runs these builds for Windows,
 macOS, and Linux on pull requests, pushes to `main`, version tags, and manual
-dispatch. Artifacts are uploaded per OS. Windows produces both
+dispatch. Artifacts are uploaded per OS. Windows produces
 `TinadecOffice-*-win-x64-setup.exe` (NSIS) and
-`TinadecOffice-*-win-x64-portable.exe`. Each package bundles Bun, the compiled
-Core and Gateway services, and a platform-specific self-contained
+`TinadecOffice-*-win-x64.zip` (extract, then run `TinadecOffice.exe`). The ZIP
+replaces the self-extracting portable executable, which was too slow with the
+bundled runtime. Each package runs the compiled Core and Gateway services with
+its bundled fixed Node runtime and includes a platform-specific self-contained
 `TinadecTools` publish; users do not need Bun or .NET installed. A non-default
 Gateway URL keeps the bundled services disabled and routes model config through
 that Gateway instead of the local package agent dir.
