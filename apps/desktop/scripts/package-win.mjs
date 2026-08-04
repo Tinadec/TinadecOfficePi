@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// Keep NSIS/portable temp off C: — full system TEMP makes makensis mmap fail.
+// Keep NSIS temp off C: — full system TEMP makes makensis mmap fail.
 const desktopDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const tmp = join(desktopDir, ".runtime-cache", "tmp");
 mkdirSync(tmp, { recursive: true });

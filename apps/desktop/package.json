@@ -103,7 +103,7 @@
     "win": {
       "target": [
         "nsis",
-        "portable"
+        "zip"
       ],
       "icon": "public/tinadec-build.ico"
     },
@@ -113,9 +113,6 @@
       "allowToChangeInstallationDirectory": true,
       "artifactName": "${productName}-${version}-${os}-${arch}-setup.${ext}",
       "deleteAppDataOnUninstall": false
-    },
-    "portable": {
-      "artifactName": "${productName}-${version}-${os}-${arch}-portable.${ext}"
     },
     "mac": {
       "target": [

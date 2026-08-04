@@ -30,7 +30,7 @@ jobs:
             artifact: TinadecOffice-windows-x64
             paths: |
               apps/desktop/release/*-setup.exe
-              apps/desktop/release/*-portable.exe
+              apps/desktop/release/*.zip
           - name: macOS x64
             os: macos-15-intel
             script: dist:mac
@@ -108,6 +108,11 @@ jobs:
           PKG=$(node -p "({darwin:{x64:'@rollup/rollup-darwin-x64',arm64:'@rollup/rollup-darwin-arm64'},linux:{x64:'@rollup/rollup-linux-x64-gnu',arm64:'@rollup/rollup-linux-arm64-gnu'},win32:{x64:'@rollup/rollup-win32-x64-msvc'}})[process.platform][process.arch]")
           npm install --no-save "$PKG"
 
+      # node-pty ships no Linux prebuild and macOS package copies must retain spawn-helper.
+      - name: Rebuild Unix terminal native module
+        if: runner.os != 'Windows'
+        run: npm rebuild node-pty --build-from-source
+
       - name: Test desktop
         run: npm test -w @tinadec/desktop
 
@@ -140,10 +145,10 @@ jobs:
           $release = Resolve-Path 'apps/desktop/release'
           $packages = @(
             Join-Path $release 'win-unpacked/TinadecOffice.exe'
-            Get-ChildItem -LiteralPath $release -File | Where-Object { $_.Name -match '-(setup|portable)\.exe$' } | ForEach-Object FullName
+            Get-ChildItem -LiteralPath $release -File | Where-Object { $_.Name -match '-setup\.exe$' } | ForEach-Object FullName
           )
-          if ($packages.Count -ne 3) {
-            throw "Expected the unpacked executable, setup, and portable package; found $($packages.Count)."
+          if ($packages.Count -ne 2) {
+            throw "Expected the unpacked executable and setup package; found $($packages.Count)."
           }
           foreach ($package in $packages) {
             $signature = Get-AuthenticodeSignature -LiteralPath $package

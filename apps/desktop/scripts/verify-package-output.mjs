@@ -117,7 +117,7 @@ function verifyInstallableArtifacts() {
 		process.platform === "win32"
 			? [
 					["Windows NSIS installer", (name) => name.endsWith("-setup.exe")],
-					["Windows portable package", (name) => name.endsWith("-portable.exe")],
+					["Windows ZIP package", (name) => name.endsWith(".zip")],
 				]
 			: process.platform === "darwin"
 				? [

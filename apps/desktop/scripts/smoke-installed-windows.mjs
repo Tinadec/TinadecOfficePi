@@ -75,7 +75,7 @@ mkdirSync(installRoot, { recursive: true });
 
 try {
 	run("Silent NSIS install", installer, ["/S", `/D=${installDir}`], {
-		timeout: 600_000,
+		timeout: 1_500_000,
 		windowsVerbatimArguments: true,
 	});
 	if (!existsSync(executable) || !statSync(executable).isFile()) {
