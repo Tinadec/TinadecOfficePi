@@ -177,6 +177,20 @@ async function downloadPinned(label, url, asset, expectedSha256) {
 	}
 }
 
+function extractArchive(archive, destination) {
+	if (process.platform === "win32") {
+		const quote = (value) => `'${value.replaceAll("'", "''")}'`;
+		run("powershell.exe", [
+			"-NoProfile",
+			"-NonInteractive",
+			"-Command",
+			`Expand-Archive -LiteralPath ${quote(archive)} -DestinationPath ${quote(destination)} -Force`,
+		]);
+		return;
+	}
+	run("tar", ["-xf", archive, "-C", destination]);
+}
+
 async function stageNode() {
 	const cacheArchive = await downloadPinned(
 		`Node ${NODE_VERSION}`,
@@ -188,7 +202,7 @@ async function stageNode() {
 	rmSync(extractDir, { recursive: true, force: true });
 	mkdirSync(extractDir, { recursive: true });
 	try {
-		run("tar", ["-xf", cacheArchive, "-C", extractDir]);
+		extractArchive(cacheArchive, extractDir);
 		const extracted = join(
 			extractDir,
 			ridMeta.nodeAsset.replace(/\.(?:zip|tar\.gz)$/, ""),
@@ -197,17 +211,12 @@ async function stageNode() {
 			join(extracted, ...(rid.startsWith("win-") ? ["node.exe"] : ["bin", "node"])),
 			"Extracted Node executable",
 		);
-		requireFile(
-			join(extracted, ...(rid.startsWith("win-") ? ["npm.cmd"] : ["bin", "npm"])),
-			"Extracted npm launcher",
-		);
 		cpSync(extracted, join(runtimeDir, "node"), { recursive: true });
 	} finally {
 		rmSync(extractDir, { recursive: true, force: true });
 	}
 	if (!rid.startsWith("win-")) {
 		chmodSync(join(runtimeDir, "node", "bin", "node"), 0o755);
-		chmodSync(join(runtimeDir, "node", "bin", "npm"), 0o755);
 	}
 }
 
@@ -226,7 +235,7 @@ async function stageNativeTool(name, version, repository, asset, expectedSha256)
 	mkdirSync(extractDir, { recursive: true });
 	mkdirSync(dirname(cacheBinary), { recursive: true });
 	try {
-		run("tar", ["-xf", cacheArchive, "-C", extractDir]);
+		extractArchive(cacheArchive, extractDir);
 		const extracted = requireFile(
 			join(extractDir, asset.replace(/\.(?:zip|tar\.gz)$/, ""), binary),
 			`Extracted ${name} executable`,
