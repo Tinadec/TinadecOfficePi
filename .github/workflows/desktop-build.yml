@@ -108,10 +108,17 @@ jobs:
           PKG=$(node -p "({darwin:{x64:'@rollup/rollup-darwin-x64',arm64:'@rollup/rollup-darwin-arm64'},linux:{x64:'@rollup/rollup-linux-x64-gnu',arm64:'@rollup/rollup-linux-arm64-gnu'},win32:{x64:'@rollup/rollup-win32-x64-msvc'}})[process.platform][process.arch]")
           npm install --no-save "$PKG"
 
-      # node-pty ships no Linux prebuild and macOS package copies must retain spawn-helper.
+      # electron-builder honors node-pty's prebuilds/ package whitelist, not build/Release.
       - name: Rebuild Unix terminal native module
         if: runner.os != 'Windows'
-        run: npm rebuild node-pty --build-from-source
+        shell: bash
+        run: |
+          npm rebuild node-pty --build-from-source
+          TARGET="node_modules/node-pty/prebuilds/$(node -p '`${process.platform}-${process.arch}`')"
+          mkdir -p "$TARGET"
+          cp node_modules/node-pty/build/Release/pty.node "$TARGET/pty.node"
+          cp node_modules/node-pty/build/Release/spawn-helper "$TARGET/spawn-helper"
+          chmod +x "$TARGET/spawn-helper"
 
       - name: Test desktop
         run: npm test -w @tinadec/desktop

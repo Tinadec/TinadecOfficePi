@@ -179,24 +179,22 @@ function verifyAsar(resources) {
 	);
 	requireDirectory(unpackedPty, "Unpacked node-pty native module");
 	requireFile(join(unpackedPty, "package.json"), "Unpacked node-pty manifest");
-	const nativeRoot =
-		process.platform === "win32"
-			? join(unpackedPty, "prebuilds", "win32-x64")
-			: process.platform === "darwin"
-				? join(unpackedPty, "prebuilds", "darwin-x64")
-				: join(unpackedPty, "build", "Release");
-	for (const file of
-		process.platform === "win32"
-			? [
-					"pty.node",
-					"conpty.node",
-					"conpty_console_list.node",
-					"winpty-agent.exe",
-					"winpty.dll",
-					join("conpty", "OpenConsole.exe"),
-					join("conpty", "conpty.dll"),
-				]
-			: ["pty.node", "spawn-helper"]) {
+	const nativeRoot = join(
+		unpackedPty,
+		"prebuilds",
+		`${process.platform}-${process.arch}`,
+	);
+	for (const file of process.platform === "win32"
+		? [
+				"pty.node",
+				"conpty.node",
+				"conpty_console_list.node",
+				"winpty-agent.exe",
+				"winpty.dll",
+				join("conpty", "OpenConsole.exe"),
+				join("conpty", "conpty.dll"),
+			]
+		: ["pty.node", "spawn-helper"]) {
 		const path = join(nativeRoot, file);
 		if (file === "spawn-helper" || file.endsWith(".exe")) {
 			requireExecutable(path, `node-pty native file ${file}`);
