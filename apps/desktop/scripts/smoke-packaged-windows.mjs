@@ -15,8 +15,15 @@ if (process.platform !== "win32") {
 
 const desktopDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const releaseDir = resolve(process.argv[2] ?? join(desktopDir, "release"));
-const executable = join(releaseDir, "win-unpacked", "TinadecOffice.exe");
-const smokeRoot = join(desktopDir, ".runtime-cache", "packaged-smoke");
+const executable = resolve(
+	process.env.TINADEC_SMOKE_EXECUTABLE ??
+		join(releaseDir, "win-unpacked", "TinadecOffice.exe"),
+);
+const smokeRoot = resolve(
+	process.env.TINADEC_SMOKE_ROOT ??
+		join(desktopDir, ".runtime-cache", `packaged-smoke-${process.pid}`),
+);
+const smokeLabel = process.env.TINADEC_SMOKE_LABEL ?? "Packaged Windows";
 const userData = join(smokeRoot, "user-data");
 const profile = join(smokeRoot, "profile");
 const temporary = join(smokeRoot, "temp");
@@ -54,14 +61,14 @@ async function waitForJson(url, validate, label, timeoutMs = 60_000) {
 	while (Date.now() < deadline) {
 		if (child?.exitCode !== null) {
 			throw new Error(
-				`Packaged application exited with code ${child.exitCode} before ${label} was ready.`,
+				`${smokeLabel} application exited with code ${child.exitCode} before ${label} was ready.`,
 			);
 		}
 		const value = await fetchJson(url);
 		if (value && validate(value)) return value;
 		await delay(250);
 	}
-	throw new Error(`Timed out waiting for packaged ${label} at ${url}`);
+	throw new Error(`Timed out waiting for ${smokeLabel} ${label} at ${url}`);
 }
 
 function sanitizedEnvironment() {
@@ -130,7 +137,7 @@ async function stopProcessTree() {
 }
 
 if (!existsSync(executable)) {
-	throw new Error(`Packaged Windows executable is missing: ${executable}`);
+	throw new Error(`${smokeLabel} executable is missing: ${executable}`);
 }
 if (
 	(await fetchJson(coreHealthUrl, 500)) ||
@@ -139,7 +146,7 @@ if (
 	throw new Error("Smoke-test ports 48730/48731 are already in use.");
 }
 
-rmSync(smokeRoot, { recursive: true, force: true });
+rmSync(smokeRoot, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
 for (const directory of [userData, profile, temporary]) {
 	mkdirSync(directory, { recursive: true });
 }
@@ -191,7 +198,7 @@ try {
 		"runtime readiness",
 	);
 	console.log(
-		`Packaged Windows smoke test passed (readiness: ${readiness.status}).`,
+		`${smokeLabel} smoke test passed (readiness: ${readiness.status}).`,
 	);
 } catch (error) {
 	smokeError = error;
@@ -205,4 +212,15 @@ try {
 }
 
 if (smokeError) throw smokeError;
-rmSync(smokeRoot, { recursive: true, force: true });
+if (!process.env.TINADEC_SMOKE_ROOT) {
+	try {
+		rmSync(smokeRoot, {
+			recursive: true,
+			force: true,
+			maxRetries: 4,
+			retryDelay: 250,
+		});
+	} catch (error) {
+		console.warn(`Could not remove disposable smoke data: ${error.message}`);
+	}
+}

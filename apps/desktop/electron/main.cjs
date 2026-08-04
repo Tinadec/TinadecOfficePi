@@ -94,6 +94,12 @@ function appConfigFile() {
 	return path.join(app.getPath("userData"), "settings.json");
 }
 
+const userDataPath = app.getPath("userData");
+configurePiModelConfig({
+	resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
+	agentDir: path.join(userDataPath, "pi-agent"),
+});
+
 function focusMainWindow() {
 	const win =
 		BrowserWindow.getAllWindows().find(
@@ -431,12 +437,6 @@ app.on("before-quit", (event) => {
 });
 
 if (hasSingleInstanceLock) app.whenReady().then(async () => {
-	const userDataPath = app.getPath("userData");
-	const agentDir = path.join(userDataPath, "pi-agent");
-	configurePiModelConfig({
-		resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
-		agentDir,
-	});
 	process.env.TINADEC_RESOLVED_GATEWAY_URL = loadAppConfig(
 		appConfigFile(),
 	).gateway_url;

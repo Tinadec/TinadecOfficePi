@@ -34,8 +34,15 @@ internal static class GitCli
             return null;
         }
 
+        var git = RuntimePrerequisites.FindExecutable("git");
+        if (git is null)
+        {
+            error = RuntimePrerequisites.GitError;
+            return null;
+        }
+
         var revParse = TerminalRunner.RunAsync(
-            "git",
+            git,
             ["rev-parse", "--show-toplevel"],
             path,
             stdin: null,
@@ -102,8 +109,12 @@ internal static class GitCli
     {
         try
         {
+            var git = RuntimePrerequisites.FindExecutable("git");
+            if (git is null)
+                return new GitExecResult(false, -1, string.Empty, RuntimePrerequisites.GitError);
+
             var r = await TerminalRunner.RunAsync(
-                "git",
+                git,
                 arguments,
                 repoTopLevel,
                 stdin,

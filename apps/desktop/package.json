@@ -124,7 +124,8 @@
       ],
       "category": "public.app-category.developer-tools",
       "icon": "public/tinadec-build-mac.png",
-      "identity": null
+      "identity": null,
+      "notarize": false
     },
     "linux": {
       "target": [

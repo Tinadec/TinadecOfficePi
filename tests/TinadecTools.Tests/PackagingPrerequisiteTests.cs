@@ -10,9 +10,10 @@ public sealed class PackagingPrerequisiteTests
         "TinadecTools", "TinadecTools.csproj"));
 
     [Theory]
-    [InlineData("ValidateBundledRipgrepForReleaseBuild", "Release")]
-    [InlineData("ValidateBundledRipgrepForPublish", "Debug")]
-    public async Task PackagingValidation_FailsWhenBundledRipgrepIsMissing(string target, string configuration)
+    [InlineData("Build", "Release")]
+    [InlineData("Publish", "Release")]
+    [InlineData("Publish", "Debug")]
+    public async Task PackagingTargets_FailClearlyWhenBundledRipgrepIsMissing(string target, string configuration)
     {
         var missingPath = Path.Combine(Path.GetTempPath(), $"missing-rg-{Guid.NewGuid():N}");
         var result = await RunMsbuildAsync(target, configuration, missingPath);
@@ -20,13 +21,15 @@ public sealed class PackagingPrerequisiteTests
         Assert.NotEqual(0, result.ExitCode);
         Assert.Contains("Required bundled ripgrep binary is missing", result.Output, StringComparison.Ordinal);
         Assert.Contains(missingPath, result.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Stage the platform ripgrep payload", result.Output, StringComparison.Ordinal);
+        Assert.Contains(OperatingSystem.IsWindows() ? "rg.exe" : "rg", result.Output, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task DebugBuildValidation_DoesNotRequireBundledRipgrep()
     {
         var missingPath = Path.Combine(Path.GetTempPath(), $"missing-rg-{Guid.NewGuid():N}");
-        var result = await RunMsbuildAsync("ValidateBundledRipgrepForReleaseBuild", "Debug", missingPath);
+        var result = await RunMsbuildAsync("Build", "Debug", missingPath);
 
         Assert.Equal(0, result.ExitCode);
     }
@@ -52,11 +55,14 @@ public sealed class PackagingPrerequisiteTests
             $"-target:{target}",
             $"-property:Configuration={configuration}",
             $"-property:BundledRipgrepPath={bundledRipgrepPath}",
+            "-property:PublishAot=false",
             "-nologo"
         })
         {
             startInfo.ArgumentList.Add(argument);
         }
+        if (target == "Publish")
+            startInfo.ArgumentList.Add("-property:NoBuild=true");
 
         using var process = Process.Start(startInfo)!;
         var stdout = process.StandardOutput.ReadToEndAsync();

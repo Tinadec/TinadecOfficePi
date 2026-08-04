@@ -11,7 +11,10 @@
     "test": "node --test --import tsx src/*.test.ts"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "0.81.1",
+    "@earendil-works/pi-ai": "0.81.1",
     "@earendil-works/pi-coding-agent": "0.81.1",
+    "@earendil-works/pi-tui": "0.81.1",
     "@elysiajs/node": "^1.4.5",
     "elysia": "^1.4.28",
     "pi-observational-memory": "^3.0.3",

@@ -8,8 +8,14 @@ const SERVICE_VERSION = "0.1.0";
 
 function bundledRuntimePaths(resourcesPath, platform = process.platform) {
 	const root = join(resourcesPath, "runtime");
-	const nodeDir = join(root, "node");
+	const nodeDir = join(
+		root,
+		"node",
+		...(platform === "win32" ? [] : ["bin"]),
+	);
 	const toolsDir = join(root, "tools");
+	const gitCmdDir = join(root, "git", "cmd");
+	const gitBinDir = join(root, "git", "bin");
 	return {
 		node: join(nodeDir, platform === "win32" ? "node.exe" : "node"),
 		nodeDir,
@@ -21,6 +27,10 @@ function bundledRuntimePaths(resourcesPath, platform = process.platform) {
 			platform === "win32" ? "TinadecTools.exe" : "TinadecTools",
 		),
 		toolsDir,
+		git: platform === "win32" ? join(gitCmdDir, "git.exe") : undefined,
+		bash: platform === "win32" ? join(gitBinDir, "bash.exe") : undefined,
+		gitCmdDir,
+		gitBinDir,
 	};
 }
 
@@ -98,7 +108,12 @@ function buildServiceEnvironment(
 				"PATH"
 			: "PATH";
 	const separator = platform === process.platform ? delimiter : platform === "win32" ? ";" : ":";
-	result[pathKey] = [paths.nodeDir, paths.toolsDir, result[pathKey]]
+	result[pathKey] = [
+		paths.nodeDir,
+		paths.toolsDir,
+		...(platform === "win32" ? [paths.gitCmdDir, paths.gitBinDir] : []),
+		result[pathKey],
+	]
 		.filter(Boolean)
 		.join(separator);
 	return result;
@@ -254,7 +269,9 @@ function createServiceManager({
 		}
 
 		const paths = bundledRuntimePaths(resourcesPath, platform);
-		for (const name of ["node", "core", "gateway", "tools"]) {
+		const required = ["node", "core", "gateway", "tools"];
+		if (platform === "win32") required.push("git", "bash");
+		for (const name of required) {
 			if (!existsSync(paths[name])) {
 				throw new Error(`Bundled ${name} runtime is missing: ${paths[name]}`);
 			}

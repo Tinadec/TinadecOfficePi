@@ -52,7 +52,7 @@
 
   <Target Name="ValidateBundledRipgrep" Condition="'$(DesignTimeBuild)' != 'true'">
     <Error Condition="!Exists('$(BundledRipgrepPath)')"
-           Text="Required bundled ripgrep binary is missing: '$(BundledRipgrepPath)'. Release builds and all publishes require staging to supply $(BundledRipgrepFileName); ordinary Debug builds may use TINADEC_TOOLS_RG_PATH or PATH." />
+           Text="Required bundled ripgrep binary is missing: '$(BundledRipgrepPath)'. Stage the platform ripgrep payload as $(BundledRipgrepFileName) at that path before Release builds or publishing; ordinary Debug builds may use TINADEC_TOOLS_RG_PATH or PATH." />
   </Target>
 
   <Target Name="ValidateBundledRipgrepForReleaseBuild"
@@ -62,7 +62,6 @@
 
   <Target Name="ValidateBundledRipgrepForPublish"
           BeforeTargets="Publish"
-          Condition="'$(Configuration)' != 'Release'"
           DependsOnTargets="ValidateBundledRipgrep" />
 
 </Project>

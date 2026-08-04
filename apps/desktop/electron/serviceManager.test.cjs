@@ -77,16 +77,20 @@ test("bundled runtime paths use the staged Node and native tool names", () => {
 	const linux = bundledRuntimePaths("/opt/resources", "linux");
 	assert.match(windows.node, /runtime[\\/]node[\\/]node\.exe$/);
 	assert.match(windows.tools, /TinadecTools\.exe$/);
-	assert.match(linux.node, /runtime[\\/]node[\\/]node$/);
+	assert.match(windows.git, /runtime[\\/]git[\\/]cmd[\\/]git\.exe$/);
+	assert.match(windows.bash, /runtime[\\/]git[\\/]bin[\\/]bash\.exe$/);
+	assert.match(linux.node, /runtime[\\/]node[\\/]bin[\\/]node$/);
 	assert.match(linux.tools, /TinadecTools$/);
+	assert.equal(linux.git, undefined);
+	assert.equal(linux.bash, undefined);
 });
 
-test("service environments prepend bundled Node and tools directories", () => {
+test("service environments prepend bundled Node, tools, Git, and Bash directories", () => {
 	const paths = bundledRuntimePaths("C:\\resources", "win32");
 	const env = buildServiceEnvironment(paths, { Path: "C:\\Windows" }, "win32");
 	assert.equal(
 		env.Path,
-		`${paths.nodeDir};${paths.toolsDir};C:\\Windows`,
+		`${paths.nodeDir};${paths.toolsDir};${paths.gitCmdDir};${paths.gitBinDir};C:\\Windows`,
 	);
 	assert.equal(env.PATH, undefined);
 });
@@ -118,7 +122,14 @@ test("packaged services launch with Node and clear ownership on repeated stop", 
 	const resourcesPath = path.join(root, "resources");
 	const userDataPath = path.join(root, "user-data");
 	const paths = bundledRuntimePaths(resourcesPath, "win32");
-	for (const file of [paths.node, paths.core, paths.gateway, paths.tools]) {
+	for (const file of [
+		paths.node,
+		paths.core,
+		paths.gateway,
+		paths.tools,
+		paths.git,
+		paths.bash,
+	]) {
 		mkdirSync(path.dirname(file), { recursive: true });
 		writeFileSync(file, "");
 	}
@@ -180,7 +191,11 @@ test("packaged services launch with Node and clear ownership on repeated stop", 
 		const pathEntry = Object.entries(launches[0].options.env).find(
 			([key]) => key.toLowerCase() === "path",
 		)?.[1];
-		assert.ok(pathEntry.startsWith(`${paths.nodeDir};${paths.toolsDir}`));
+		assert.ok(
+			pathEntry.startsWith(
+				`${paths.nodeDir};${paths.toolsDir};${paths.gitCmdDir};${paths.gitBinDir}`,
+			),
+		);
 
 		await manager.stopBundledServices();
 		await manager.stopBundledServices();

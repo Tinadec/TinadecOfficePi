@@ -1,5 +1,8 @@
+import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { createRequire } from "node:module";
+import { join, posix, resolve, win32 } from "node:path";
+import { fileURLToPath } from "node:url";
 import { node } from "@elysiajs/node";
 import { Elysia } from "elysia";
 import {
@@ -19,8 +22,12 @@ import {
 } from "./agentConfig.js";
 
 const port = Number(process.env.TINADEC_CORE_PORT ?? 48731);
+const isMain =
+	process.argv[1] !== undefined &&
+	resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const moduleRequire = createRequire(import.meta.url);
 const store = new CoreStore(defaultStatePath());
-await store.load();
+if (isMain) await store.load();
 const pi = new PiHarness(store);
 
 const BUILTIN_PROVIDERS = new Set([
@@ -61,7 +68,7 @@ async function readJsonOr(file: string): Promise<Record<string, unknown>> {
 	}
 }
 
-new Elysia({ adapter: node() })
+const app = new Elysia({ adapter: node() })
 	.get("/", () =>
 		Response.redirect("http://127.0.0.1:" + port + "/api/v1/health"),
 	)
@@ -72,33 +79,7 @@ new Elysia({ adapter: node() })
 		runtime: "pi-agent-sdk",
 		time: now(),
 	}))
-	.get("/api/v1/doctor", async () => ({
-		platform: process.platform,
-		agent_core_version: "pi-agent-sdk",
-		checks: [
-			{
-				name: "pi-sdk",
-				status: "ready",
-				message: "Pi Agent SDK is embedded in the Core process.",
-			},
-			{
-				name: "pi-subagents",
-				status: "ready",
-				message: "pi-subagents is loaded as a Pi extension.",
-			},
-			{
-				name: "pi-observational-memory",
-				status: "ready",
-				message:
-					"Observational memory is loaded from the isolated Core installation.",
-			},
-			{
-				name: "models",
-				status: (await pi.availableModels()).length > 0 ? "ready" : "warning",
-				message: "Configure Pi authentication with pi /login or an API key.",
-			},
-		],
-	}))
+	.get("/api/v1/doctor", async () => doctor(await pi.availableModels()))
 	.get("/api/v1/readiness", async () => readiness(await pi.availableModels()))
 	.get("/api/v1/pi/models", async () => pi.availableModels())
 	.get("/api/v1/pi/model-configs", async () => {
@@ -1025,55 +1006,215 @@ new Elysia({ adapter: node() })
 		system_prompt:
 			"Pi builds the effective system prompt from its resource loader, AGENTS.md files, skills, and configured extensions.",
 		warnings: [],
-	}))
-	.listen({ port, hostname: "127.0.0.1" });
+	}));
 
-console.log(`TinadecPi Core listening on http://127.0.0.1:${port}`);
+if (isMain) {
+	app.listen({ port, hostname: "127.0.0.1" });
+	console.log(`TinadecPi Core listening on http://127.0.0.1:${port}`);
+}
 
-function readiness(models: unknown[]) {
-	const ready = models.length > 0;
+type RuntimeStatus = "ready" | "warning" | "blocked";
+type RuntimeComponent = {
+	id: string;
+	name: string;
+	status: RuntimeStatus;
+	summary: string;
+	evidence: string[];
+};
+
+export type RuntimeCheckOptions = {
+	nodeVersion?: string;
+	platform?: NodeJS.Platform;
+	env?: Record<string, string | undefined>;
+	pathExists?: (path: string) => boolean;
+	resolveModule?: (specifier: string) => string | undefined;
+};
+
+export function supportsNodeVersion(version: string): boolean {
+	const match = /^v?(\d+)\.(\d+)\.(\d+)/.exec(version);
+	return Boolean(
+		match &&
+			(Number(match[1]) > 22 ||
+				(Number(match[1]) === 22 && Number(match[2]) >= 19)),
+	);
+}
+
+export function runtimeComponents(
+	models: unknown[],
+	options: RuntimeCheckOptions = {},
+): RuntimeComponent[] {
+	const platform = options.platform ?? process.platform;
+	const env = options.env ?? process.env;
+	const pathExists = options.pathExists ?? existsSync;
+	const resolveModule = options.resolveModule ?? resolveRuntimeModule;
+	const nodeReady = supportsNodeVersion(
+		options.nodeVersion ?? process.versions.node,
+	);
+	const commandReady = (command: string) =>
+		commandOnPath(command, platform, env, pathExists);
+
+	return [
+		{
+			id: "pi-sdk",
+			name: "Pi Agent SDK",
+			status: "ready",
+			summary: "Pi Agent SDK is embedded in the Core process.",
+			evidence: ["@earendil-works/pi-coding-agent"],
+		},
+		{
+			id: "node",
+			name: "Node.js",
+			status: nodeReady ? "ready" : "blocked",
+			summary: nodeReady
+				? "Node.js meets the minimum supported version."
+				: "Run TinadecPi with Node.js 22.19 or newer.",
+			evidence: ["Node.js >=22.19"],
+		},
+		extensionComponent(
+			"pi-subagents",
+			"Pi Subagents",
+			"pi-subagents",
+			resolveModule,
+			pathExists,
+		),
+		extensionComponent(
+			"pi-observational-memory",
+			"Pi Observational Memory",
+			"pi-observational-memory/src/index.ts",
+			resolveModule,
+			pathExists,
+		),
+		commandComponent("bash", "Bash", commandReady("bash"), platform),
+		commandComponent("git", "Git", commandReady("git"), platform),
+		{
+			id: "models",
+			name: "Pi models",
+			status: models.length ? "ready" : "warning",
+			summary: models.length
+				? `${models.length} authenticated model(s) available.`
+				: "No Pi model is authenticated; configure one with pi /login or an API key.",
+			evidence: ["Pi-managed authentication"],
+		},
+	];
+}
+
+function doctor(models: unknown[]) {
 	return {
-		status: ready ? "ready" : "warning",
+		platform: process.platform,
+		agent_core_version: "pi-agent-sdk",
+		checks: runtimeComponents(models).map((component) => ({
+			name: component.id,
+			status: component.status,
+			message: component.summary,
+		})),
+	};
+}
+
+export function readiness(models: unknown[], options: RuntimeCheckOptions = {}) {
+	const components = runtimeComponents(models, options);
+	const count = (status: RuntimeStatus) =>
+		components.filter((component) => component.status === status).length;
+	const blockedCount = count("blocked");
+	const warningCount = count("warning");
+	return {
+		status: blockedCount ? "blocked" : warningCount ? "warning" : "ready",
 		generated_at: now(),
 		runtime: "pi-agent-sdk",
 		receipt_id: id("readiness"),
-		components: [
-			{
-				id: "pi-sdk",
-				name: "Pi Agent SDK",
-				status: "ready",
-				summary: "Embedded Node SDK runtime.",
-				evidence: ["@earendil-works/pi-coding-agent"],
-			},
-			{
-				id: "pi-subagents",
-				name: "Pi Subagents",
-				status: "ready",
-				summary: "Delegation extension loaded for Pi sessions.",
-				evidence: ["pi-subagents"],
-			},
-			{
-				id: "pi-observational-memory",
-				name: "Pi Observational Memory",
-				status: "ready",
-				summary:
-					"Observations, reflections, recall, and prepared compaction are loaded.",
-				evidence: ["pi-observational-memory@3.0.3"],
-			},
-			{
-				id: "models",
-				name: "Pi models",
-				status: ready ? "ready" : "warning",
-				summary: ready
-					? `${models.length} authenticated model(s) available.`
-					: "No Pi model is authenticated.",
-				evidence: ["pi /login or API key"],
-			},
-		],
-		ready_count: ready ? 4 : 3,
-		warning_count: ready ? 0 : 1,
-		blocked_count: 0,
+		components,
+		ready_count: count("ready"),
+		warning_count: warningCount,
+		blocked_count: blockedCount,
 	};
+}
+
+function resolveRuntimeModule(specifier: string): string | undefined {
+	try {
+		return moduleRequire.resolve(specifier);
+	} catch {
+		return undefined;
+	}
+}
+
+function extensionComponent(
+	id: string,
+	name: string,
+	specifier: string,
+	resolveModule: (specifier: string) => string | undefined,
+	pathExists: (path: string) => boolean,
+): RuntimeComponent {
+	let resolved: string | undefined;
+	try {
+		resolved = resolveModule(specifier);
+	} catch {
+		resolved = undefined;
+	}
+	const ready = Boolean(resolved && pathExists(resolved));
+	return {
+		id,
+		name,
+		status: ready ? "ready" : "blocked",
+		summary: ready
+			? `${name} is resolved for Pi sessions.`
+			: `Install ${id} in the packaged Core runtime.`,
+		evidence: [`${id} module`],
+	};
+}
+
+function commandComponent(
+	id: string,
+	name: string,
+	ready: boolean,
+	platform: NodeJS.Platform,
+): RuntimeComponent {
+	const executable = platform === "win32" ? `${id}.exe` : id;
+	return {
+		id,
+		name,
+		status: ready ? "ready" : "blocked",
+		summary: ready
+			? `${name} is available through PATH.`
+			: `Install ${name} and add ${executable} to PATH before running agents.`,
+		evidence: [`${executable} on PATH`],
+	};
+}
+
+function commandOnPath(
+	command: string,
+	platform: NodeJS.Platform,
+	env: Record<string, string | undefined>,
+	pathExists: (path: string) => boolean,
+): boolean {
+	const windows = platform === "win32";
+	const value = environmentValue(env, "PATH", windows);
+	if (!value) return false;
+	const extensions = windows
+		? (environmentValue(env, "PATHEXT", true) ?? ".COM;.EXE;.BAT;.CMD")
+				.split(";")
+				.filter(Boolean)
+		: [""];
+	const path = windows ? win32 : posix;
+	return value
+		.split(windows ? ";" : ":")
+		.filter(Boolean)
+		.some((directory) => {
+			const unquoted = directory.replace(/^"(.*)"$/, "$1");
+			return extensions.some((extension) =>
+				pathExists(path.join(unquoted, `${command}${extension}`)),
+			);
+		});
+}
+
+function environmentValue(
+	env: Record<string, string | undefined>,
+	name: string,
+	caseInsensitive: boolean,
+): string | undefined {
+	if (!caseInsensitive) return env[name];
+	const key = Object.keys(env).find(
+		(candidate) => candidate.toLowerCase() === name.toLowerCase(),
+	);
+	return key ? env[key] : undefined;
 }
 
 function modelReadiness(

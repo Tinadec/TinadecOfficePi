@@ -7,10 +7,12 @@ const NODE_VERSION = "22.23.2";
 const PI_SDK = "@earendil-works/pi-coding-agent";
 const desktopDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const runtime = join(desktopDir, "runtime");
-const nodeDir = join(runtime, "node");
+const isWindows = process.platform === "win32";
+const nodeDir = isWindows
+	? join(runtime, "node")
+	: join(runtime, "node", "bin");
 const services = join(runtime, "services");
 const testData = join(desktopDir, ".runtime-cache", "health-check");
-const isWindows = process.platform === "win32";
 const node = join(nodeDir, isWindows ? "node.exe" : "node");
 const tools = join(
 	runtime,
@@ -19,6 +21,7 @@ const tools = join(
 );
 const coreEntry = join(services, "TinadecPi", "index.js");
 const gatewayEntry = join(services, "gateway", "index.js");
+const sdkEntry = join(services, "node_modules", PI_SDK, "dist", "index.js");
 const children = [];
 const pathKey =
 	Object.keys(process.env).find((key) => key.toLowerCase() === "path") ??
@@ -31,7 +34,7 @@ const runtimeEnv = {
 		: nodeDir,
 };
 
-for (const file of [node, tools, coreEntry, gatewayEntry]) {
+for (const file of [node, tools, coreEntry, gatewayEntry, sdkEntry]) {
 	if (!existsSync(file))
 		throw new Error(`Staged runtime file is missing: ${file}`);
 }
